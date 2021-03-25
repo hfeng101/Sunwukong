@@ -1,0 +1,7 @@
+apiVersion: sunwukong.my.domain/v1
+kind: Houmao
+metadata:
+  name: houmao-sample
+spec:
+  # Add fields here
+  foo: bar

@@ -1,0 +1,24 @@
+# permissions for end users to edit houmaoes.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: houmao-editor-role
+rules:
+- apiGroups:
+  - sunwukong.my.domain
+  resources:
+  - houmaoes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - sunwukong.my.domain
+  resources:
+  - houmaoes/status
+  verbs:
+  - get

@@ -18,6 +18,9 @@ package initial
 
 import (
 	"flag"
+	"github.com/cihub/seelog"
+	"github.com/hfeng101/Sunwukong/util/consts"
+	"github.com/hfeng101/Sunwukong/util/logger"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -34,6 +37,8 @@ import (
 	sunwukongv1 "github.com/hfeng101/Sunwukong/api/v1"
 	"github.com/hfeng101/Sunwukong/controllers"
 	//+kubebuilder:scaffold:imports
+
+	zaohuacontrollers "github.com/hfeng101/Sunwukong/pkg/zaohua/controllers"
 )
 
 var (
@@ -52,11 +57,17 @@ func InitialAggrator(role string) {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
+
+	var logLevel string
+
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
+
+	flag.StringVar(&logLevel, "log-level", "info", "seelog level,support different level such as debug、info、warn、error，info is the auto value if without setting")
+
 	opts := zap.Options{
 		Development: true,
 	}
@@ -78,12 +89,30 @@ func InitialAggrator(role string) {
 		os.Exit(1)
 	}
 
-	if err = (&controllers.HoumaoReconciler{
-		Client: mgr.GetClient(),
-		Log:    ctrl.Log.WithName("controllers").WithName("Houmao"),
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Houmao")
+	//设置seelog最低日志等级，默认为info
+	setLoggerLevel(logLevel)
+
+
+	if role == consts.RootCmdRole {
+		if err = (&controllers.HoumaoReconciler{
+			Client: mgr.GetClient(),
+			Log:    ctrl.Log.WithName("controllers").WithName("Sunwukong"),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "Sunwukong")
+			os.Exit(1)
+		}
+	}else if role == consts.ZaohuaCmdRole {
+		if err = (&zaohuacontrollers.ZaohuaController{
+			Client: mgr.GetClient(),
+			//Log:    ctrl.Log.WithName("controllers").WithName("Zaohua"),
+			Scheme: mgr.GetScheme(),
+		}).SetupWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create controller", "controller", "Zaohua")
+			os.Exit(1)
+		}
+	}else {
+		seelog.Errorf("Initial rool:%v is not valid", role)
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
@@ -102,4 +131,18 @@ func InitialAggrator(role string) {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+func setLoggerLevel(level string) {
+	switch level {
+	case logger.LOG_LEVEL_DEBUG:
+	case logger.LOG_LEVEL_INFO:
+	case logger.LOG_LEVEL_WARN:
+	case logger.LOG_LEVEL_ERROR:
+	default:
+		seelog.Errorf("Invalid logger level:%v ", level)
+		os.Exit(1)
+	}
+
+	logger.SwitchLoggerLevel(level)
 }

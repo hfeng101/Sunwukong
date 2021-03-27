@@ -3,6 +3,7 @@ module github.com/hfeng101/Sunwukong
 go 1.15
 
 require (
+	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575
 	github.com/go-logr/logr v0.3.0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/onsi/ginkgo v1.14.1

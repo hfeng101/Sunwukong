@@ -42,14 +42,14 @@ type HoumaoSpec struct {
 	MaxReplicas int											`json:"maxReplicas"`
 
 	//造化需要的资源配置，即毫毛变猴需要的仙气量
-	XianQiLiang	corev1.ResourceRequirements		`json:"xianQiLiang"`
+	XianqiLiang	corev1.ResourceRequirements		`json:"xianqiLiang"`
 
 	//要关注的service，关注对应的endpoints变化或服务质量等
 	ServiceName []string	`json:"serviceName"`
 }
 
 //仙气信息，为每根毫毛都会备好一缕仙气，随时准备变化
-type XianQiInfo struct {
+type XianqiInfo struct {
 	Name	string		`json:"name"`
 	Namespace	string	`json:"namespace"`
 }
@@ -65,11 +65,14 @@ type HoumaoStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
+	//当前所处阶段
+	Phase	string	`json:phase`
+
 	//原始实例数
 	OriginReplicas	int	`json:originReplicas`
 
 	//各造化名称，与猴毛名称一样
-	XianQiInfo	XianQiInfo	`json:xianQiInfo`
+	XianqiInfo	XianqiInfo	`json:xianQiInfo`
 
 	//当前造化结果
 	CurrentZaohuaResult	ZaohuaResult	`json:"currentZaohuaResult"`

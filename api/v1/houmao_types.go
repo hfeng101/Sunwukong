@@ -17,13 +17,13 @@ limitations under the License.
 package v1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"time"
 
 	//autoscaling "k8s.io/client-go/kubernetes/typed/autoscaling/v2beta2"
 	//"k8s.io/kubernetes"
 	autoscaling "k8s.io/api/autoscaling/v2beta2"
-	corev1 "k8s.io/api/core/v1"
 )
 
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
@@ -34,18 +34,19 @@ type HoumaoSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	//兼容k8s原生hpa
+	//兼容k8s原生hpa，更新会使得zaohua在下一轮开始前重新加载
 	ScaleTargetRef autoscaling.CrossVersionObjectReference	`json:"scaleTargetRef,omitempty"`
 	Metrics autoscaling.MetricSpec							`json:"metrics,omitempty"`
 	Behavor autoscaling.HorizontalPodAutoscalerBehavior		`json:"behavor"`
 	MinReplicas *int										`json:"minReplicas"`
 	MaxReplicas int											`json:"maxReplicas"`
 
-	//造化需要的资源配置，即毫毛变猴需要的仙气量
-	XianqiLiang	corev1.ResourceRequirements		`json:"xianqiLiang"`
-
 	//要关注的service，关注对应的endpoints变化或服务质量等
 	ServiceName []string	`json:"serviceName"`
+
+	//造化需要的资源配置，即毫毛变猴需要的仙气量，更新会重建xianqi deployment
+	XianqiLiang	corev1.ResourceRequirements		`json:"xianqiLiang"`
+
 }
 
 //仙气信息，为每根毫毛都会备好一缕仙气，随时准备变化

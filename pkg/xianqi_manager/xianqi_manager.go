@@ -40,7 +40,7 @@ func (x *XianqiManagerHandle) CreateOrUpdateXianqi(ctx context.Context, key type
 
 	//如果不存在，则新创建
 	labels := map[string]string{
-		"Type": "XianQi",
+		"Type": "Xianqi",
 		"Name": consts.XianqiPrefix+key.Name,
 		"Namespace": key.Namespace,
 		"HoumaoName": key.Name,

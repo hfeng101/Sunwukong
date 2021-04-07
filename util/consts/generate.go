@@ -15,5 +15,5 @@ const(
 
 	XianqiImage = ""
 
-	XianqiPrefix = "XianQi_"
+	XianqiPrefix = "Xianqi_"
 )

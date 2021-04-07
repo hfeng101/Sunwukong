@@ -17,10 +17,13 @@ limitations under the License.
 package initial
 
 import (
+	"context"
 	"flag"
 	"github.com/cihub/seelog"
+	"github.com/hfeng101/Sunwukong/pkg/zaohua/daofa"
 	"github.com/hfeng101/Sunwukong/util/consts"
 	"github.com/hfeng101/Sunwukong/util/logger"
+	"k8s.io/apimachinery/pkg/types"
 	"os"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -92,7 +95,6 @@ func InitialAggrator(role string) {
 	//设置seelog最低日志等级，默认为info
 	setLoggerLevel(logLevel)
 
-
 	if role == consts.RootCmdRole {
 		if err = (&controllers.HoumaoReconciler{
 			Client: mgr.GetClient(),
@@ -103,6 +105,42 @@ func InitialAggrator(role string) {
 			os.Exit(1)
 		}
 	}else if role == consts.ZaohuaCmdRole {
+		// 退出监听
+		ctx := context.Background()
+
+		key := types.NamespacedName{
+			os.Getenv("HoumaoNamespace"),
+			os.Getenv("HoumaoName"),
+		}
+		object := &sunwukongv1.Houmao{}
+		if err := mgr.GetClient().Get(ctx, key, object); err != nil {
+			seelog.Errorf("Get object for key:%v failed, err is %v", key, err.Error())
+			return
+		}
+		zaohuaHandle := daofa.ZaohuaHandle{
+			Client: mgr.GetClient(),
+			Object: &daofa.ScaleObject{
+				object.Spec.ScaleTargetRef,
+				object.Spec.Metrics,
+				object.Spec.Behavor,
+				object.Spec.MinReplicas,
+				object.Spec.MaxReplicas,
+				object.Spec.ServiceName,
+			},
+		}
+		//主流程
+		go zaohuaHandle.StartShifa(ctx)
+
+		// 两种重启方式，一是内部检测到造化对象变更，触发自重启，二是operator检测到配置变更，重建仙气
+
+		select {
+		case <- ctx.Done():
+			seelog.Infof("exit, main processor have been exit!")
+			os.Exit(0)
+		}
+
+
+
 		if err = (&zaohuacontrollers.ZaohuaController{
 			Client: mgr.GetClient(),
 			//Log:    ctrl.Log.WithName("controllers").WithName("Zaohua"),

@@ -16,6 +16,7 @@ limitations under the License.
 package cmd
 
 import (
+	"flag"
 	"github.com/hfeng101/Sunwukong/cmd/initial"
 	"github.com/hfeng101/Sunwukong/util/consts"
 	"github.com/spf13/cobra"
@@ -37,6 +38,13 @@ to quickly create a Cobra application.`,
 	Run: zaohuaRunner,
 }
 
+var (
+	XianqiName string
+	XianqiNamespace string
+	HoumaoName string
+	HoumaoNamespace string
+)
+
 func init() {
 	rootCmd.AddCommand(ZaohuaCmd)
 
@@ -52,6 +60,10 @@ func init() {
 }
 
 func initZaohuaOptions() error{
+	flag.StringVar(&XianqiName, "xianqi", "", "xianqi name")
+	flag.StringVar(&XianqiNamespace, "xianqiNamespace", "", "xianqi namespace")
+	flag.StringVar(&HoumaoName, "houmao", "", "houmao name")
+	flag.StringVar(&HoumaoNamespace, "houmaoNamespace", "", "houmao namespace")
 
 	return nil
 }
@@ -59,5 +71,6 @@ func initZaohuaOptions() error{
 func zaohuaRunner(cmd *cobra.Command, args []string) {
 	initZaohuaOptions()
 
+	// 检测crd配置变更事件
 	initial.InitialAggrator(consts.ZaohuaCmdRole)
 }

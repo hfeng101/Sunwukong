@@ -16,7 +16,6 @@ limitations under the License.
 package cmd
 
 import (
-	"flag"
 	"github.com/hfeng101/Sunwukong/cmd/initial"
 	"github.com/hfeng101/Sunwukong/util/consts"
 	"github.com/spf13/cobra"
@@ -60,10 +59,10 @@ func init() {
 }
 
 func initZaohuaOptions() error{
-	flag.StringVar(&XianqiName, "xianqi", "", "xianqi name")
-	flag.StringVar(&XianqiNamespace, "xianqiNamespace", "", "xianqi namespace")
-	flag.StringVar(&HoumaoName, "houmao", "", "houmao name")
-	flag.StringVar(&HoumaoNamespace, "houmaoNamespace", "", "houmao namespace")
+	//flag.StringVar(&XianqiName, "xianqi", "", "xianqi name")
+	//flag.StringVar(&XianqiNamespace, "xianqiNamespace", "", "xianqi namespace")
+	//flag.StringVar(&HoumaoName, "houmao", "", "houmao name")
+	//flag.StringVar(&HoumaoNamespace, "houmaoNamespace", "", "houmao namespace")
 
 	return nil
 }

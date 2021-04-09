@@ -17,7 +17,6 @@ limitations under the License.
 package initial
 
 import (
-	"context"
 	"flag"
 	"github.com/cihub/seelog"
 	"github.com/hfeng101/Sunwukong/pkg/zaohua/daofa"
@@ -25,7 +24,6 @@ import (
 	"github.com/hfeng101/Sunwukong/util/logger"
 	"k8s.io/apimachinery/pkg/types"
 	"os"
-
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -95,6 +93,9 @@ func InitialAggrator(role string) {
 	//设置seelog最低日志等级，默认为info
 	setLoggerLevel(logLevel)
 
+	//全局控制
+	ctx := ctrl.SetupSignalHandler()
+
 	if role == consts.RootCmdRole {
 		if err = (&controllers.HoumaoReconciler{
 			Client: mgr.GetClient(),
@@ -105,9 +106,6 @@ func InitialAggrator(role string) {
 			os.Exit(1)
 		}
 	}else if role == consts.ZaohuaCmdRole {
-		// 退出监听
-		ctx := context.Background()
-
 		key := types.NamespacedName{
 			os.Getenv("HoumaoNamespace"),
 			os.Getenv("HoumaoName"),
@@ -130,16 +128,6 @@ func InitialAggrator(role string) {
 		}
 		//主流程
 		go zaohuaHandle.StartShifa(ctx)
-
-		// 两种重启方式，一是内部检测到造化对象变更，触发自重启，二是operator检测到配置变更，重建仙气
-
-		select {
-		case <- ctx.Done():
-			seelog.Infof("exit, main processor have been exit!")
-			os.Exit(0)
-		}
-
-
 
 		if err = (&zaohuacontrollers.ZaohuaController{
 			Client: mgr.GetClient(),
@@ -165,10 +153,13 @@ func InitialAggrator(role string) {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+
+	//wg := sync.WaitGroup{}
+	//wg.Done()
 }
 
 func setLoggerLevel(level string) {

@@ -35,6 +35,10 @@ func (z *ZaohuaHandle) StartShifa(ctx context.Context, ) error{
 		scaler(ctx, z.Object)
 
 		select{
+		case <-ctx.Done():
+			// 退出
+			seelog.Infof("break out, return")
+			return nil
 		case <- RestartCh:
 			// 重新加载对象或行为
 			seelog.Infof("Reload houmao config for next zaohua operation")
@@ -61,7 +65,10 @@ func reloadZaohuaHandle(houmao *sunwukongv1.Houmao) error {
 }
 
 func scaler(ctx context.Context, scaleObject *ScaleObject) error {
-
+	//如果scaleObject没有任何数据，怎么处理，空跑？等待下一轮更新重启
+	//if *scaleObject == ScaleObject{}{
+	//		<- RestartCh
+	//}
 
 	return nil
 }

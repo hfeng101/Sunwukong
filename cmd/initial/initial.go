@@ -117,14 +117,7 @@ func InitialAggrator(role string) {
 		}
 		zaohuaHandle := daofa.ZaohuaHandle{
 			Client: mgr.GetClient(),
-			Object: &daofa.ScaleObject{
-				object.Spec.ScaleTargetRef,
-				object.Spec.Metrics,
-				object.Spec.Behavor,
-				object.Spec.MinReplicas,
-				object.Spec.MaxReplicas,
-				object.Spec.ServiceName,
-			},
+			Object: object,
 		}
 		//主流程
 		go zaohuaHandle.StartShifa(ctx)

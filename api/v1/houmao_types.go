@@ -38,8 +38,8 @@ type HoumaoSpec struct {
 	ScaleTargetRef autoscaling.CrossVersionObjectReference	`json:"scaleTargetRef,omitempty"`
 	Metrics autoscaling.MetricSpec							`json:"metrics,omitempty"`
 	Behavor autoscaling.HorizontalPodAutoscalerBehavior		`json:"behavor"`
-	MinReplicas *int										`json:"minReplicas"`
-	MaxReplicas int											`json:"maxReplicas"`
+	MinReplicas *int64									`json:"minReplicas"`
+	MaxReplicas int64									`json:"maxReplicas"`
 
 	//要关注的service，关注对应的endpoints变化或服务质量等
 	ServiceName []string	`json:"serviceName"`
@@ -57,8 +57,8 @@ type XianqiInfo struct {
 
 type ZaohuaResult struct {
 	Timestamp	time.Time	`json:"timestamp"`
-	CurrentReplicas	int		`json:"currentReplicas"`
-	DesiredReplicas int		`json:"desiredReplicas"`
+	CurrentReplicas	int64		`json:"currentReplicas"`
+	DesiredReplicas int64		`json:"desiredReplicas"`
 }
 
 // HoumaoStatus defines the observed state of Houmao

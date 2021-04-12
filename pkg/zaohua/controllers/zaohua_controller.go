@@ -7,6 +7,7 @@ import (
 	"github.com/hfeng101/Sunwukong/pkg/zaohua/daofa"
 	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 
 	//"k8s.io/apimachinery/"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -17,6 +18,7 @@ type ZaohuaController struct {
 	client.Client
 
 	Scheme *runtime.Scheme
+	Cache cache.Cache
 }
 
 var (
@@ -42,6 +44,28 @@ func (z *ZaohuaController) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			seelog.Errorf("RestartShifa failed, err is %v", err.Error())
 		}
 	}
+
+	//通过添加eventhandle来做对比
+	//gvk := schema.GroupVersionKind{
+	//	Group: sunwukongv1.GroupVersion.Group,
+	//	Version: sunwukongv1.GroupVersion.Version,
+	//	Kind: "Houmao",
+	//}
+	//if informer,err := z.Cache.GetInformerForKind(ctx, gvk);err != nil {
+	//	//添加一个update处理handle
+	//	resourceEventHandle := toolscache.ResourceEventHandlerFuncs{
+	//		AddFunc: func(obj interface{}){},
+	//		UpdateFunc: func(oldObj interface{}, newObj interface{}){
+	//			old := oldObj.(sunwukongv1.Houmao)
+	//			new := newObj.(sunwukongv1.Houmao)
+	//			if !reflect.DeepEqual(old.Spec, new.Spec){
+	//				//如果更新了，就重启
+	//			}
+	//		},
+	//		DeleteFunc: func(obj interface{}){},
+	//	}
+	//	informer.AddEventHandler(resourceEventHandle)
+	//}
 
 	return ctrl.Result{},nil
 }

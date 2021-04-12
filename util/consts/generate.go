@@ -16,4 +16,7 @@ const(
 	XianqiImage = ""
 
 	XianqiPrefix = "Xianqi_"
+
+	ZaohuaModeZhudong = "Zhudong"
+	ZaohuaModeBeidong = "Beidong"
 )

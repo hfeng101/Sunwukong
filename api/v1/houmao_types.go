@@ -36,7 +36,7 @@ type HoumaoSpec struct {
 
 	//兼容k8s原生hpa，更新会使得zaohua在下一轮开始前重新加载
 	ScaleTargetRef autoscaling.CrossVersionObjectReference	`json:"scaleTargetRef,omitempty"`
-	Metrics autoscaling.MetricSpec							`json:"metrics,omitempty"`
+	Metrics []autoscaling.MetricSpec							`json:"metrics,omitempty"`
 	Behavor autoscaling.HorizontalPodAutoscalerBehavior		`json:"behavor"`
 	MinReplicas *int64									`json:"minReplicas"`
 	MaxReplicas int64									`json:"maxReplicas"`

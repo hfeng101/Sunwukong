@@ -115,12 +115,14 @@ func InitialAggrator(role string) {
 			seelog.Errorf("Get object for key:%v failed, err is %v", key, err.Error())
 			return
 		}
+
 		zaohuaHandle := daofa.ZaohuaHandle{
 			Client: mgr.GetClient(),
 			Object: object,
 		}
 		//主流程
-		go zaohuaHandle.StartShifa(ctx)
+		zaohuaMode := os.Getenv("ZaohuaMode")
+		go zaohuaHandle.StartShifa(ctx, zaohuaMode)
 
 		if err = (&zaohuacontrollers.ZaohuaController{
 			Client: mgr.GetClient(),

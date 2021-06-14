@@ -55,10 +55,21 @@ type XianqiInfo struct {
 	Namespace	string	`json:"namespace"`
 }
 
+//记录当时弹性伸缩决策过程及结果
+type MetricStatus struct {
+	autoscaling.MetricStatus
+	IsScaled bool `json:"isScaled"`
+	ScaledReplicas int64 `json:"scaledReplicas"`
+	ScaledValueStatus autoscaling.MetricValueStatus	`json:"scaledValueStatus"`
+}
+
 type ZaohuaResult struct {
 	Timestamp	time.Time	`json:"timestamp"`
 	CurrentReplicas	int64		`json:"currentReplicas"`
 	DesiredReplicas int64		`json:"desiredReplicas"`
+
+	MetricsElection []MetricStatus	`json:"metricElection"`
+	//autoscaling.MetricSpec
 }
 
 // HoumaoStatus defines the observed state of Houmao

@@ -7,14 +7,13 @@ import (
 	autoscalingv2beta2 "k8s.io/api/autoscaling/v2beta2"
 )
 
-
-type PodName string
 type PodMetric struct {
 	Timestamp time.Time
 	Window	time.Duration
 	Value	int64
 }
-type PodMetricsInfo map[PodName]PodMetric
+
+type PodMetricsInfo map[string]PodMetric
 
 type MetricsInterface interface {
 	GetResourceMetric(resource v1.ResourceName, namespace string, selector labels.Selector, container string)(PodMetricsInfo, time.Time, error)

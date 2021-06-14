@@ -5,7 +5,9 @@ import (
 	"github.com/cihub/seelog"
 	sunwukongv1 "github.com/hfeng101/Sunwukong/api/v1"
 	"github.com/hfeng101/Sunwukong/util/consts"
+	"google.golang.org/api/websecurityscanner/v1"
 	autoscalingv2beta2 "k8s.io/api/autoscaling/v2beta2"
+	"k8s.io/apimachinery/pkg/labels"
 
 	//"go/types"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -27,6 +29,19 @@ var (
 type ZaohuaHandle struct {
 	client.Client
 	Object *sunwukongv1.Houmao
+
+	Ch *CalculateHandle
+}
+
+type TimestampedRecommendationRecord struct {
+	DesiredReplicas	int64
+	Timestamp	time.Time
+}
+
+type TimestampedScaleEvent struct {
+	ReplicaChange int64
+	TimeStamp	time.Time
+	OutDated 	bool
 }
 
 //type ScaleObject struct {
@@ -54,7 +69,7 @@ func (z *ZaohuaHandle) StartShifa(ctx context.Context, mode string) error{
 				seelog.Errorf("scaler failed, time is %v, err is %v", time.Now().UTC(), err.Error())
 			}
 		case consts.ZaohuaModeBeidong:
-			// 主动拉取指标，检测并触发弹性伸缩
+			// 被动接收指标，触发弹性伸缩
 			if err := z.scaleForEvent(ctx, z.Object);err != nil {
 				seelog.Errorf("scaler failed, time is %v, err is %v", time.Now().UTC(), err.Error())
 			}
@@ -128,25 +143,38 @@ func (z *ZaohuaHandle)detectAndScale(ctx context.Context, scaleObject *sunwukong
 		return err
 	}
 
+	currentReplicas := scale.Spec.Replicas
+	//selector,err := labels.Parse(scale.Status.Selector)
 	// 获取metrics
 	//metrics := scaleObject.Spec.Metrics
 	// 计算
-	replicas,err := calculate(ctx, targetGVK, scaleObject.Spec.Metrics, int64(scale.Spec.Replicas),  scaleObject.Spec.MaxReplicas, *(scaleObject.Spec.MinReplicas))
+	//replicas,err := z.calculate(ctx, targetGVK, scaleObject.Spec.Metrics, int64(scale.Spec.Replicas),  scaleObject.Spec.MaxReplicas, *(scaleObject.Spec.MinReplicas))
+	replicas,err := z.calculate(ctx, targetGVK, scaleObject, scale)
 	if err != nil {
 		seelog.Errorf("calculate replicas failed, err is %v", err.Error())
 		return nil
 	}
 
 	// 根据柔性策略，实施伸缩
-	if err := execScale(ctx, replicas, target); err != nil {
+	desiredReplicas, err := z.execScale(ctx, replicas, scale, scaleObject.Spec.Behavor)
+	if err != nil {
 
 	}
 	//同步service变化
-
+	//if err := updateService(ctx, finalReplicas, )
 
 	//更新状态，收尾
+	//scaleObject.Status.CurrentZaohuaResult.CurrentReplicas := currentReplicas
+	//scaleObject.Status.CurrentZaohuaResult.DesiredReplicas := desiredReplicas
 
-	if err:=updateStatus(scaleObject);err != nil {
+	zaohuaResult := &sunwukongv1.ZaohuaResult{
+		time.Now(),
+		int64(currentReplicas),
+		desiredReplicas,
+	}
+	//if scaleObject.Status.Last5thZaohuaResult[4] != sunwukongv1.ZaohuaResult{}
+
+	if err := z.updateStatus(zaohuaResult);err != nil {
 
 	}
 
@@ -159,7 +187,7 @@ func (z *ZaohuaHandle)scaleForEvent(ctx context.Context, object *sunwukongv1.Hou
 	return nil
 }
 
-//
+//获取scale
 func (z *ZaohuaHandle)getScaleForTarget(ctx context.Context, name string, namespace string, targetGVK schema.GroupVersionKind)(autoscalingv1.Scale,error){
 	//select {
 	//case <- ctx.Done():
@@ -182,80 +210,119 @@ func (z *ZaohuaHandle)getScaleForTarget(ctx context.Context, name string, namesp
 }
 
 // 根据指标计算伸缩结果
-func calculate(ctx context.Context, targetGVK schema.GroupVersionKind, metrics []autoscalingv2beta2.MetricSpec, currentReplicas int64, maxReplicas int64, minReplicas int64)(int64, error) {
+func (z *ZaohuaHandle)calculate(ctx context.Context, targetGVK schema.GroupVersionKind, scaleObject *sunwukongv1.Houmao, scale autoscalingv1.Scale)(replicas int64, metricType string, metricName string, err error) {
 	//select{
 	//case <-ctx.Done():
 	//	seelog.Errorf("exit, get ctx.Done signal!")
 	//	return replicas, nil
 	//}
 
+	currentReplicas := int64(scale.Status.Replicas)
+	maxReplicas := scaleObject.Spec.MaxReplicas
+	minReplicas := scaleObject.Spec.MinReplicas
+
+	namespace := scaleObject.Namespace
+	metrics := scaleObject.Spec.Metrics
+	podSelector,err := labels.Parse(scale.Status.Selector)
+	if err != nil {
+		seelog.Errorf("labels.Parse for scale.Status.Selector: %v failed, err is %v", scale.Status.Selector, err.Error())
+		return 0,"", "", err
+	}
+
 	desiredReplicas := currentReplicas
-	for index, metric := range(metrics){
+	//metricType := ""
+	//metricName := ""
+	for _, metric := range(metrics){
 		switch metric.Type{
-		case consts.PodsMetricSourceType:
-			replicas,err := CalculateReplicasWithPodsMetricSourceType(ctx, targetGVK, metric, currentReplicas)
-			if err != nil {
-				seelog.Errorf("CalculateReplicasWithPodsMetricSourceType failed, err is %v", err.Error())
-				continue
-			}
-			if desiredReplicas < replicas {
-				desiredReplicas = replicas
-			}
-		case consts.ResourceMetricSourceType:
-			replicas,err := CalculateReplicasWithResourceMetricSourceType(ctx, targetGVK, metric, currentReplicas)
-			if err != nil {
-				seelog.Errorf("CalculateReplicasWithResourceMetricSourceType failed, err is %v", err.Error())
-				continue
-			}
-			if desiredReplicas < replicas {
-				desiredReplicas = replicas
-			}
-		case consts.ContainerResourceMetricSourceType:
-			replicas,err := CalculateReplicasWithContainerResourceMetricSourcetype(ctx, targetGVK, metric, currentReplicas)
+		case consts.ContainerResourceMetricSourceType:		//容器内的resourse配置指标，直指cpu、mem
+			replicas, _, err := z.Ch.CalculateReplicasWithContainerResourceMetricSourceType(ctx, namespace, metric, podSelector, currentReplicas)
 			if err != nil {
 				seelog.Errorf("CalculateReplicasWithContainerResourceMetricSourcetype failed, err is %v", err.Error())
 				continue
 			}
 			if desiredReplicas < replicas {
 				desiredReplicas = replicas
+				metricType = consts.ContainerResourceMetricSourceType
+				metricName = metric.ContainerResource.Name.String()
+			} //容器内的resourse配置指标，直指cpu、mem
+		case consts.ResourceMetricSourceType:		//pod内所有容器的resourse配置指标，直指cpu、mem
+			replicas, _, err := z.Ch.CalculateReplicasWithResourceMetricSourceType(ctx, namespace, podSelector, metric, currentReplicas)
+			if err != nil {
+				seelog.Errorf("CalculateReplicasWithResourceMetricSourceType failed, err is %v", err.Error())
+				continue
 			}
-		case consts.ObjectMetricSourceType:
-			replicas,err := CalculateReplicasWithObjectSourceType(ctx, targetGVK, metric, currentReplicas)
+			if desiredReplicas < replicas {
+				desiredReplicas = replicas
+				metricType = consts.ResourceMetricSourceType
+				metricName = metric.Resource.Name.String()
+			}
+		case consts.PodsMetricSourceType:		//pod内除resourse配置指标之外，由pod自身提供的自定义metrics指标，比如:QPS
+			replicas, _, err := z.Ch.CalculateReplicasWithPodsMetricSourceType(ctx, namespace, podSelector, metric, currentReplicas)
+			if err != nil {
+				seelog.Errorf("CalculateReplicasWithPodsMetricSourceType failed, err is %v", err.Error())
+				continue
+			}
+			if desiredReplicas < replicas {
+				desiredReplicas = replicas
+				metricType = consts.ContainerResourceMetricSourceType
+				metricName = metric.ContainerResource.Name.String()
+			}
+		case consts.ObjectMetricSourceType:		//非pod本身服务提供的指标，但是k8s内其他资源object提供的指标，如:ingress，一般object是需要汇聚关联的deployment下所有pods的指标总和
+			replicas, _, err := z.Ch.CalculateReplicasWithObjectSourceType(ctx, namespace, podSelector, metric, currentReplicas)
 			if err != nil {
 				seelog.Errorf("CalculateReplicasWithObjectSourceType failed, err is %v", err.Error())
 				continue
 			}
 			if desiredReplicas < replicas {
 				desiredReplicas = replicas
+				metricType = consts.ObjectMetricSourceType
+				metricName = metric.Object.Metric.Name
 			}
-		case consts.ExternalMetricSourceType:
-			replicas,err := CalculateExternalMetricSourceType(ctx, targetGVK, metric, currentReplicas)
+		case consts.ExternalMetricSourceType:	//自定义指标，来源于k8s本身无关，指标完全取自外部系统
+			replicas, _, err := z.Ch.CalculateReplicasWithExternalMetricSourceType(ctx, namespace, metric, podSelector, currentReplicas)
 			if err != nil {
 				seelog.Errorf("CalculateExternalMetricSourceType failed, err is %v", err.Error())
 				continue
 			}
 			if desiredReplicas < replicas {
 				desiredReplicas = replicas
+				metricType = consts.ExternalMetricSourceType
+				metricName = metric.External.Metric.Name
 			}
+		default:
+			seelog.Errorf("the metric type:%v is not supported", metric.Type)
+			return desiredReplicas, "", "", seelog.Errorf("the metric type:%v is not supported", metric.Type)
 		}
 	}
 
+	//保证在[min, max]区间内
 	if desiredReplicas > maxReplicas {
 		desiredReplicas = maxReplicas
-	}else if desiredReplicas < minReplicas {
-		desiredReplicas = minReplicas
+	}else if desiredReplicas < *minReplicas {
+		desiredReplicas = *minReplicas
 	}
 
-	return desiredReplicas, nil
+	return desiredReplicas, metricType, metricName, nil
 }
 
-func execScale(ctx context.Context, scaledReplicas int64, target interface{}) error{
+func (z *ZaohuaHandle)execScale(ctx context.Context, scaledReplicas int64, scale autoscalingv1.Scale, behavor autoscalingv2beta2.HorizontalPodAutoscalerBehavior) (int64, error){
 
-	if err := ReviseWithBehavor(); err != nil {
+	// 根据behavor设置，调整弹性伸缩行为
+	if behavor.ScaleUp != nil && behavor.ScaleDown != nil {
+		finalReplicas,err := ReviseWithBehavor(ctx, scaledReplicas, behavor)
+		if  err != nil {
+			seelog.Errorf("ReviseWithBehavor for behavor:%v failed, err is %v", behavor, err.Error())
+		}
 
+		scale.Spec.Replicas = finalReplicas
+	}else {
+		scale.Spec.Replicas = scaledReplicas
 	}
 
-	return nil
+	// 记录弹性伸缩事件
+	storageScaleEvent()
+
+	return scale.Spec.Replicas, nil
 }
 
 func syncService()error {
@@ -263,7 +330,7 @@ func syncService()error {
 	return nil
 }
 
-func updateStatus(object *sunwukongv1.Houmao)error {
+func (z *ZaohuaHandle)updateStatus(ctx context.Context, zaohuaResult *sunwukongv1.ZaohuaResult)error {
 
 	return nil
 }

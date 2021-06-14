@@ -95,6 +95,8 @@ func (r *HoumaoReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			return ctrl.Result{}, err
 		}
 
+		//TODO:在创建仙气前需先确认scaleTargetRef指定的target是否存在，若不存在，则直接忽略
+
 		// 根据猴毛crd，创建或更新仙气，随时候着准备发起造化
 		if err := xianqiManagerHandle.CreateOrUpdateXianqi(ctx, objectKey, object); err != nil {
 			seelog.Errorf("CreateOrUpdateXianqi for %v failed, err is %v", objectKey, object)

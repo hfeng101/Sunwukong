@@ -20,10 +20,17 @@ import (
 	"flag"
 	"github.com/cihub/seelog"
 	"github.com/hfeng101/Sunwukong/pkg/zaohua/daofa"
+	daofametrics "github.com/hfeng101/Sunwukong/pkg/zaohua/daofa/metrics"
 	"github.com/hfeng101/Sunwukong/util/consts"
 	"github.com/hfeng101/Sunwukong/util/logger"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/discovery"
+	resourceclient "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
+	customclient "k8s.io/metrics/pkg/client/custom_metrics"
+	externalclient "k8s.io/metrics/pkg/client/external_metrics"
 	"os"
+	"time"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -52,6 +59,14 @@ func init() {
 
 	utilruntime.Must(sunwukongv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
+}
+
+func initZaohuaParam()(){
+	var cpuInitializationPeriod time.Duration
+	var initialReadinessDelay time.Duration
+
+	flag.DurationVar(&cpuInitializationPeriod, "cpu-initialization-period", ,"The period after pod start when CPU samples might be skipped.")
+	flag.DurationVar(&initialReadinessDelay, "initial-readiness-delay", ,"the period after pod start during which readiness changes will be treated as initial readiness.")
 }
 
 func InitialAggrator(role string) {
@@ -116,9 +131,33 @@ func InitialAggrator(role string) {
 			return
 		}
 
+		//建立RestMetricsClient
+		rmc, err := resourceclient.NewForConfig(mgr.GetConfig())
+		if err != nil {
+			seelog.Errorf("create  resourceclient failed, err is %v", err.Error())
+			return
+		}
+
+		discoveryClient,err := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
+		if err != nil {
+			seelog.Errorf("NewDiscoveryClientForConfig  failed, err is %v", err.Error())
+			return
+		}
+
+		apiVersionGetter := customclient.NewAvailableAPIsGetter(discoveryClient)
+		cmc := customclient.NewForConfig(mgr.GetConfig(), mgr.GetClient().RESTMapper(), apiVersionGetter)
+		emc,err := externalclient.NewForConfig(mgr.GetConfig())
+		if err != nil {
+			seelog.Errorf("create externalclient failed, err is %v", err.Error())
+			return
+		}
+		restMetricsClientHandle := daofametrics.NewRestMetricsClient(rmc, cmc, emc)
+		calculateHandle := daofa.NewCalculateHandle(restMetricsClientHandle)
+
 		zaohuaHandle := daofa.ZaohuaHandle{
 			Client: mgr.GetClient(),
 			Object: object,
+			Ch: calculateHandle,
 		}
 		//主流程
 		zaohuaMode := os.Getenv("ZaohuaMode")

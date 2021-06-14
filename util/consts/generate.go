@@ -19,4 +19,6 @@ const(
 
 	ZaohuaModeZhudong = "Zhudong"
 	ZaohuaModeBeidong = "Beidong"
+
+	StabilizationWindowSeconds = 300
 )

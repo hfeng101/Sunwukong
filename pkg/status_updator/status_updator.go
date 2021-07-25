@@ -20,8 +20,13 @@ var (
 )
 
 // 初始化
-func NewStatusUpdateHandle(clientHandle client.Client, object *sunwukongv1.Houmao){
+func NewStatusUpdateHandle(clientHandle client.Client, object *sunwukongv1.Houmao) (*StatusUpdateHandle){
 	Handle = &StatusUpdateHandle{
+		clientHandle,
+		object,
+	}
+
+	return &StatusUpdateHandle{
 		clientHandle,
 		object,
 	}
@@ -35,6 +40,7 @@ func GetStatusUpdateHandle() *StatusUpdateHandle{
 	return Handle
 }
 
+// 更新状态
 func (s *StatusUpdateHandle) UpdateStatus(ctx context.Context, status sunwukongv1.HoumaoStatus) error{
 	//s.object.Status = status
 	if reflect.DeepEqual(s.object.Status, status){
@@ -43,6 +49,8 @@ func (s *StatusUpdateHandle) UpdateStatus(ctx context.Context, status sunwukongv
 	}
 
 	//TODO: 如何只更新status，而非全局更新
+	s.object.Status = status
+
 	if err := s.Client.Update(ctx, s.object);err != nil {
 		seelog.Errorf("update status for %v failed, err is %v", status, err)
 		return err
@@ -51,12 +59,17 @@ func (s *StatusUpdateHandle) UpdateStatus(ctx context.Context, status sunwukongv
 	return nil
 }
 
-
+// 仅更新仙气
 func (s *StatusUpdateHandle) UpdateXianqiInfo(ctx context.Context, xianqiInfo sunwukongv1.XianqiInfo) error {
+	if reflect.DeepEqual(s.object.Status.XianqiInfo, xianqiInfo){
+		seelog.Infof("status is same,do not update status")
+		return nil
+	}
 
 	return nil
 }
 
+// 仅更新phase信息
 func (s *StatusUpdateHandle) UpdatePhase(ctx context.Context, phase string) error {
 
 	return nil

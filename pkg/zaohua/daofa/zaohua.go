@@ -4,8 +4,9 @@ import (
 	"context"
 	"github.com/cihub/seelog"
 	sunwukongv1 "github.com/hfeng101/Sunwukong/api/v1"
+	"github.com/hfeng101/Sunwukong/pkg/status_updator"
 	"github.com/hfeng101/Sunwukong/util/consts"
-	"google.golang.org/api/websecurityscanner/v1"
+	//"google.golang.org/api/websecurityscanner/v1"
 	autoscalingv2beta2 "k8s.io/api/autoscaling/v2beta2"
 	"k8s.io/apimachinery/pkg/labels"
 
@@ -22,8 +23,13 @@ import (
 )
 
 var (
+	OriginReplicas = int32(0)
+
 	RestartCh = make(chan struct{})
 	HoumaoObject = &sunwukongv1.Houmao{}
+	RecommendationRecords []TimestampedRecommendationRecord
+	ScaleUpEvents []TimestampedScaleEvent
+	ScaleDownEvents []TimestampedScaleEvent
 )
 
 type ZaohuaHandle struct {
@@ -34,12 +40,12 @@ type ZaohuaHandle struct {
 }
 
 type TimestampedRecommendationRecord struct {
-	DesiredReplicas	int64
+	DesiredReplicas	int32
 	Timestamp	time.Time
 }
 
 type TimestampedScaleEvent struct {
-	ReplicaChange int64
+	ReplicaChange int32
 	TimeStamp	time.Time
 	OutDated 	bool
 }
@@ -123,7 +129,7 @@ func (z *ZaohuaHandle)detectAndScale(ctx context.Context, scaleObject *sunwukong
 	}
 
 	// 根据target获取对应workload的scale
-	target := scaleObject.Spec.ScaleTargetRef
+	//target := scaleObject.Spec.ScaleTargetRef
 	targetGV,err := schema.ParseGroupVersion(scaleObject.Spec.ScaleTargetRef.APIVersion)
 	if err != nil {
 		seelog.Errorf("ParseGroupVersion failed")
@@ -148,20 +154,29 @@ func (z *ZaohuaHandle)detectAndScale(ctx context.Context, scaleObject *sunwukong
 	// 获取metrics
 	//metrics := scaleObject.Spec.Metrics
 	// 计算
-	//replicas,err := z.calculate(ctx, targetGVK, scaleObject.Spec.Metrics, int64(scale.Spec.Replicas),  scaleObject.Spec.MaxReplicas, *(scaleObject.Spec.MinReplicas))
-	replicas,err := z.calculate(ctx, targetGVK, scaleObject, scale)
+	//replicas,err := z.calculate(ctx, targetGVK, scaleObject.Spec.Metrics, int32(scale.Spec.Replicas),  scaleObject.Spec.MaxReplicas, *(scaleObject.Spec.MinReplicas))
+	replicas, metricIndex, metricType, metricName, err := z.calculate(ctx, targetGVK, scaleObject, scale)
 	if err != nil {
 		seelog.Errorf("calculate replicas failed, err is %v", err.Error())
 		return nil
 	}
 
+	// 如果计算出来不需要做造化演变，则直接退出
+	if replicas == currentReplicas{
+		seelog.Infof("Do not scale, return")
+		return nil
+	}
+
 	// 根据柔性策略，实施伸缩
-	desiredReplicas, err := z.execScale(ctx, replicas, scale, scaleObject.Spec.Behavor)
+	behavor := scaleObject.Spec.Behavor
+	desiredReplicas, err := z.execScale(ctx, replicas, &scale, &behavor)
 	if err != nil {
 
 	}
 	//同步service变化
-	//if err := updateService(ctx, finalReplicas, )
+	if err := syncService(ctx, desiredReplicas ); err != nil {
+		seelog.Errorf("syncService failed, err is %v", err.Error())
+	}
 
 	//更新状态，收尾
 	//scaleObject.Status.CurrentZaohuaResult.CurrentReplicas := currentReplicas
@@ -169,12 +184,20 @@ func (z *ZaohuaHandle)detectAndScale(ctx context.Context, scaleObject *sunwukong
 
 	zaohuaResult := &sunwukongv1.ZaohuaResult{
 		time.Now(),
-		int64(currentReplicas),
+		currentReplicas,
 		desiredReplicas,
+		sunwukongv1.MetricStatus{
+			//scaleObject.Spec.Metrics[metricIndex],
+			true,
+			desiredReplicas-currentReplicas,
+			metricIndex,
+			metricType,
+			metricName,
+		},
 	}
 	//if scaleObject.Status.Last5thZaohuaResult[4] != sunwukongv1.ZaohuaResult{}
 
-	if err := z.updateStatus(zaohuaResult);err != nil {
+	if err := z.updateStatus(ctx, zaohuaResult);err != nil {
 
 	}
 
@@ -210,14 +233,14 @@ func (z *ZaohuaHandle)getScaleForTarget(ctx context.Context, name string, namesp
 }
 
 // 根据指标计算伸缩结果
-func (z *ZaohuaHandle)calculate(ctx context.Context, targetGVK schema.GroupVersionKind, scaleObject *sunwukongv1.Houmao, scale autoscalingv1.Scale)(replicas int64, metricType string, metricName string, err error) {
+func (z *ZaohuaHandle)calculate(ctx context.Context, targetGVK schema.GroupVersionKind, scaleObject *sunwukongv1.Houmao, scale autoscalingv1.Scale)(replicas int32, metricIndex int32, metricType string, metricName string, err error) {
 	//select{
 	//case <-ctx.Done():
 	//	seelog.Errorf("exit, get ctx.Done signal!")
 	//	return replicas, nil
 	//}
 
-	currentReplicas := int64(scale.Status.Replicas)
+	currentReplicas := int32(scale.Status.Replicas)
 	maxReplicas := scaleObject.Spec.MaxReplicas
 	minReplicas := scaleObject.Spec.MinReplicas
 
@@ -226,13 +249,13 @@ func (z *ZaohuaHandle)calculate(ctx context.Context, targetGVK schema.GroupVersi
 	podSelector,err := labels.Parse(scale.Status.Selector)
 	if err != nil {
 		seelog.Errorf("labels.Parse for scale.Status.Selector: %v failed, err is %v", scale.Status.Selector, err.Error())
-		return 0,"", "", err
+		return 0,0,"", "", err
 	}
 
 	desiredReplicas := currentReplicas
 	//metricType := ""
 	//metricName := ""
-	for _, metric := range(metrics){
+	for index, metric := range(metrics){
 		switch metric.Type{
 		case consts.ContainerResourceMetricSourceType:		//容器内的resourse配置指标，直指cpu、mem
 			replicas, _, err := z.Ch.CalculateReplicasWithContainerResourceMetricSourceType(ctx, namespace, metric, podSelector, currentReplicas)
@@ -242,6 +265,7 @@ func (z *ZaohuaHandle)calculate(ctx context.Context, targetGVK schema.GroupVersi
 			}
 			if desiredReplicas < replicas {
 				desiredReplicas = replicas
+				metricIndex = int32(index)
 				metricType = consts.ContainerResourceMetricSourceType
 				metricName = metric.ContainerResource.Name.String()
 			} //容器内的resourse配置指标，直指cpu、mem
@@ -253,6 +277,7 @@ func (z *ZaohuaHandle)calculate(ctx context.Context, targetGVK schema.GroupVersi
 			}
 			if desiredReplicas < replicas {
 				desiredReplicas = replicas
+				metricIndex = int32(index)
 				metricType = consts.ResourceMetricSourceType
 				metricName = metric.Resource.Name.String()
 			}
@@ -264,6 +289,7 @@ func (z *ZaohuaHandle)calculate(ctx context.Context, targetGVK schema.GroupVersi
 			}
 			if desiredReplicas < replicas {
 				desiredReplicas = replicas
+				metricIndex = int32(index)
 				metricType = consts.ContainerResourceMetricSourceType
 				metricName = metric.ContainerResource.Name.String()
 			}
@@ -275,6 +301,7 @@ func (z *ZaohuaHandle)calculate(ctx context.Context, targetGVK schema.GroupVersi
 			}
 			if desiredReplicas < replicas {
 				desiredReplicas = replicas
+				metricIndex = int32(index)
 				metricType = consts.ObjectMetricSourceType
 				metricName = metric.Object.Metric.Name
 			}
@@ -286,12 +313,13 @@ func (z *ZaohuaHandle)calculate(ctx context.Context, targetGVK schema.GroupVersi
 			}
 			if desiredReplicas < replicas {
 				desiredReplicas = replicas
+				metricIndex = int32(index)
 				metricType = consts.ExternalMetricSourceType
 				metricName = metric.External.Metric.Name
 			}
 		default:
 			seelog.Errorf("the metric type:%v is not supported", metric.Type)
-			return desiredReplicas, "", "", seelog.Errorf("the metric type:%v is not supported", metric.Type)
+			return desiredReplicas, 0,"", "", seelog.Errorf("the metric type:%v is not supported", metric.Type)
 		}
 	}
 
@@ -302,35 +330,165 @@ func (z *ZaohuaHandle)calculate(ctx context.Context, targetGVK schema.GroupVersi
 		desiredReplicas = *minReplicas
 	}
 
-	return desiredReplicas, metricType, metricName, nil
+	return desiredReplicas, metricIndex, metricType, metricName, nil
 }
 
-func (z *ZaohuaHandle)execScale(ctx context.Context, scaledReplicas int64, scale autoscalingv1.Scale, behavor autoscalingv2beta2.HorizontalPodAutoscalerBehavior) (int64, error){
-
+func (z *ZaohuaHandle)execScale(ctx context.Context, scaledReplicas int32, scale *autoscalingv1.Scale, behavor *autoscalingv2beta2.HorizontalPodAutoscalerBehavior) (int32, error){
+	preReplicas := scale.Spec.Replicas
+	finalReplicas := scaledReplicas
 	// 根据behavor设置，调整弹性伸缩行为
 	if behavor.ScaleUp != nil && behavor.ScaleDown != nil {
-		finalReplicas,err := ReviseWithBehavor(ctx, scaledReplicas, behavor)
-		if  err != nil {
-			seelog.Errorf("ReviseWithBehavor for behavor:%v failed, err is %v", behavor, err.Error())
+		if scaledReplicas > scale.Spec.Replicas{
+			finalReplicas,err := ReviseWithBehavor(ctx, scaledReplicas, scale.Spec.Replicas, behavor, &RecommendationRecords, &ScaleUpEvents)
+			if  err != nil {
+				seelog.Errorf("ReviseWithBehavor for behavor:%v failed, err is %v", behavor, err.Error())
+				return 0, err
+			}
+
+			scale.Spec.Replicas = finalReplicas
+		}else {
+			finalReplicas,err := ReviseWithBehavor(ctx, scaledReplicas, scale.Spec.Replicas, behavor, &RecommendationRecords, &ScaleDownEvents)
+			if  err != nil {
+				seelog.Errorf("ReviseWithBehavor for behavor:%v failed, err is %v", behavor, err.Error())
+				return 0, err
+			}
+
+			scale.Spec.Replicas = finalReplicas
 		}
 
-		scale.Spec.Replicas = finalReplicas
-	}else {
-		scale.Spec.Replicas = scaledReplicas
+	}
+
+	scale.Spec.Replicas = finalReplicas
+
+	// 下发造化演变结果
+	//scaleUpdateOptions := client.UpdateOptions{
+	//
+	//}
+	if err := z.Client.Update(ctx, scale, &client.UpdateOptions{}); err != nil {
+		seelog.Errorf("Update scale failed, err is %v", err.Error())
+		return 0, err
 	}
 
 	// 记录弹性伸缩事件
-	storageScaleEvent()
+	storageScaleEvent(behavor, preReplicas, finalReplicas)
 
 	return scale.Spec.Replicas, nil
 }
 
-func syncService()error {
+// 造化后更新关联的service
+func syncService(ctx context.Context, replicas int32)error {
 
 	return nil
 }
 
 func (z *ZaohuaHandle)updateStatus(ctx context.Context, zaohuaResult *sunwukongv1.ZaohuaResult)error {
+	houmaoStatus := z.Object.Status
+	preZaohuaResult := houmaoStatus.CurrentZaohuaResult
+	houmaoStatus.CurrentZaohuaResult = *zaohuaResult
+	lenOfLast5thZaohuaResult := len(houmaoStatus.Last5thZaohuaResult)
+	if lenOfLast5thZaohuaResult < 5 {
+		// 留存过去的5次造化记录
+		houmaoStatus.Last5thZaohuaResult[lenOfLast5thZaohuaResult] = preZaohuaResult
+	}else {
+		//留新去旧,先往前挪，再补充最后一个
+		for i := 0; i < lenOfLast5thZaohuaResult - 1; i++ {
+			houmaoStatus.Last5thZaohuaResult[i] = houmaoStatus.Last5thZaohuaResult[i+1]
+		}
+		houmaoStatus.Last5thZaohuaResult[lenOfLast5thZaohuaResult - 1] = preZaohuaResult
+	}
+
+	statusUpdateHandle := status_updator.NewStatusUpdateHandle(z.Client, z.Object)
+	if err := statusUpdateHandle.UpdateStatus(ctx, houmaoStatus); err != nil {
+		seelog.Errorf("UpdateStatus failed, err is %v", err.Error())
+		return err
+	}
 
 	return nil
+}
+
+func storageScaleEvent(behavor *autoscalingv2beta2.HorizontalPodAutoscalerBehavior,  preReplicas, newReplicas int32) {
+	if behavor == nil {
+		seelog.Errorf("there is no behavor, return ")
+		return
+	}
+
+	var oldSampleIndex int
+	var longestPolicyPeriod int32
+	foundOldSample := false
+	if newReplicas > preReplicas {
+		longestPolicyPeriod = getLongestPolicyPeriod(behavor.ScaleUp)
+
+		markScaleUpEventsOutdated(longestPolicyPeriod)
+
+		replicaChange := newReplicas - preReplicas
+
+		for i, scaleUpEvent := range ScaleUpEvents {
+			if scaleUpEvent.OutDated {
+				foundOldSample = true
+				oldSampleIndex = i
+			}
+		}
+
+		newEvent := TimestampedScaleEvent{replicaChange, time.Now(), false}
+		if foundOldSample {
+			ScaleUpEvents[oldSampleIndex] = newEvent
+		}else {
+			ScaleUpEvents = append(ScaleUpEvents, newEvent)
+		}
+	}else {
+		longestPolicyPeriod = getLongestPolicyPeriod(behavor.ScaleDown)
+		markScaleDownEventsOutdated(longestPolicyPeriod)
+		replicaChange := preReplicas - newReplicas
+
+		for i, scaleDownEvent := range ScaleDownEvents {
+			if scaleDownEvent.OutDated {
+				foundOldSample = true
+				oldSampleIndex = i
+			}
+		}
+
+		newEvent := TimestampedScaleEvent{replicaChange, time.Now(), false}
+		if foundOldSample {
+			ScaleDownEvents[oldSampleIndex] = newEvent
+		}else {
+			ScaleDownEvents = append(ScaleDownEvents, newEvent)
+		}
+	}
+
+	return
+}
+
+func getLongestPolicyPeriod(scaleRules *autoscalingv2beta2.HPAScalingRules)(longestPolicyPeriod int32) {
+
+	for _, policy := range(scaleRules.Policies) {
+		if policy.PeriodSeconds > longestPolicyPeriod {
+			longestPolicyPeriod = policy.PeriodSeconds
+		}
+	}
+
+	return longestPolicyPeriod
+}
+
+func markScaleUpEventsOutdated(longestPolicyPeriod int32){
+	period := time.Second * time.Duration(longestPolicyPeriod)
+	cutoff := time.Now().Add(-period)
+	for i, event := range(ScaleUpEvents){
+		if event.TimeStamp.Before(cutoff) {
+			ScaleUpEvents[i].OutDated = true
+		}
+	}
+
+	return
+}
+
+func markScaleDownEventsOutdated(longestPolicyPeriod int32){
+	period := time.Second * time.Duration(longestPolicyPeriod)
+	cutoff := time.Now().Add(-period)
+	for i, event := range(ScaleDownEvents) {
+		if event.TimeStamp.Before(cutoff) {
+			ScaleDownEvents[i].OutDated = true
+		}
+	}
+
+	return
 }

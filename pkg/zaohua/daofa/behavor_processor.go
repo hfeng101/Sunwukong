@@ -14,12 +14,12 @@ type ReviseInfo struct {
 	ScaleDownBehavor *autoscalingv2beta2.HPAScalingRules
 	//MinReplicas	int32
 	//MaxReplicas	int32
-	CurrentReplicas	int64
-	DesiredReplicas	int64
+	CurrentReplicas	int32
+	DesiredReplicas	int32
 }
 
 // 基于Behavor做弹性伸缩修订调整
-func ReviseWithBehavor(ctx context.Context, desiredReplicas int64, currentReplicas int64, behavor *autoscalingv2beta2.HorizontalPodAutoscalerBehavior, recommendationRecords *[]TimestampedRecommendationRecord, scaleEvents *[]TimestampedScaleEvent)(scaledReplicas int64, err error){
+func ReviseWithBehavor(ctx context.Context, desiredReplicas int32, currentReplicas int32, behavor *autoscalingv2beta2.HorizontalPodAutoscalerBehavior, recommendationRecords *[]TimestampedRecommendationRecord, scaleEvents *[]TimestampedScaleEvent)(scaledReplicas int32, err error){
 	// 确保scaleDown的稳定窗口要初始化, 默认300s
 	if behavor != nil && behavor.ScaleDown != nil && behavor.ScaleDown.StabilizationWindowSeconds == nil {
 		*behavor.ScaleDown.StabilizationWindowSeconds = consts.StabilizationWindowSeconds
@@ -33,7 +33,8 @@ func ReviseWithBehavor(ctx context.Context, desiredReplicas int64, currentReplic
 	}
 
 	//稳定窗口内做优选
-	stabilizationedRecommendation, reason, err := stabilizationRecommendationWithBehavors(reviseInfo, recommendationRecords)
+	//stabilizationedRecommendation, reason, err := stabilizationRecommendationWithBehavors(reviseInfo, recommendationRecords)
+	stabilizationedRecommendation, _, err := stabilizationRecommendationWithBehavors(reviseInfo, recommendationRecords)
 	if err != nil {
 		seelog.Errorf("stabilizationRecommendationBehavors failed, err is %v", err.Error())
 		return 0, err
@@ -42,7 +43,12 @@ func ReviseWithBehavor(ctx context.Context, desiredReplicas int64, currentReplic
 	reviseInfo.DesiredReplicas = stabilizationedRecommendation
 	//if stabilizationedRecommendation !=
 
-	scaledReplicas, reason, message := convertDesiredReplicasWithBehaviorRate(reviseInfo, scaleEvents)
+	//scaledReplicas, reason, message := convertDesiredReplicasWithBehaviorRate(reviseInfo, scaleEvents)
+	scaledReplicas, _, err = convertDesiredReplicasWithBehaviorRate(reviseInfo, scaleEvents)
+	if err != nil {
+		seelog.Errorf("convertDesiredReplicasWithBehaviorRate failed, err is %v", err.Error())
+		return 0, err
+	}
 
 	return scaledReplicas,nil
 }
@@ -55,12 +61,12 @@ func ReviseWithBehavor(ctx context.Context, desiredReplicas int64, currentReplic
 //}
 
 // 根据扩容/缩容策略，在稳定窗口内做优选，决策出最终结果
-func stabilizationRecommendationWithBehavors(reviseInfo ReviseInfo, recommendationRecords *[]TimestampedRecommendationRecord)(recommendation int64, reason string, err error) {
+func stabilizationRecommendationWithBehavors(reviseInfo ReviseInfo, recommendationRecords *[]TimestampedRecommendationRecord)(recommendation int32, reason string, err error) {
 	recommendation = reviseInfo.DesiredReplicas
 	foundOldSample := false
 	oldSampleIndex := int32(0)
 	scaleDelaySeconds := int32(0)
-	var recommendationAction func(int64, int64)(int64)
+	var recommendationAction func(int32, int32)(int32)
 
 	if reviseInfo.DesiredReplicas >= reviseInfo.CurrentReplicas {
 		scaleDelaySeconds = *reviseInfo.ScaleUpBehavor.StabilizationWindowSeconds
@@ -74,7 +80,7 @@ func stabilizationRecommendationWithBehavors(reviseInfo ReviseInfo, recommendati
 		//message := "recent recommendations were lower than current one, applying the lowest recent recommendation"
 	}
 
-	maxDelaySeconds := max(int64(*reviseInfo.ScaleUpBehavor.StabilizationWindowSeconds), int64(*reviseInfo.ScaleDownBehavor.StabilizationWindowSeconds))
+	maxDelaySeconds := max(int32(*reviseInfo.ScaleUpBehavor.StabilizationWindowSeconds), int32(*reviseInfo.ScaleDownBehavor.StabilizationWindowSeconds))
 	cutoff := time.Now().Add(-time.Second * time.Duration(scaleDelaySeconds))
 	obsoluteCutoff := time.Now().Add(-time.Second * time.Duration(maxDelaySeconds))
 
@@ -103,7 +109,7 @@ func stabilizationRecommendationWithBehavors(reviseInfo ReviseInfo, recommendati
 }
 
 //按Behavor策略（如：按pod数扩缩或按比例扩缩，扩缩上限和快慢节奏控制）决策出最终结果
-func convertDesiredReplicasWithBehaviorRate(reviseInfo ReviseInfo, scaleEvents *[]TimestampedScaleEvent)(replicas int64, reason string, err error) {
+func convertDesiredReplicasWithBehaviorRate(reviseInfo ReviseInfo, scaleEvents *[]TimestampedScaleEvent)(replicas int32, reason string, err error) {
 	if reviseInfo.DesiredReplicas > reviseInfo.DesiredReplicas{
 		scaleUpLimit := calculateScaleUpLimitWithScalingRules(reviseInfo.CurrentReplicas, scaleEvents, reviseInfo.ScaleUpBehavor)
 		//if scaleUpLimit < reviseInfo.CurrentReplicas {
@@ -136,27 +142,27 @@ func convertDesiredReplicasWithBehaviorRate(reviseInfo ReviseInfo, scaleEvents *
 	return replicas, reason, nil
 }
 
-func calculateScaleUpLimitWithScalingRules(currentReplicas int64, scaleEvents *[]TimestampedScaleEvent, scaleUpBehavor *autoscalingv2beta2.HPAScalingRules)(scaleUpLimit int64){
-	proposedReplicas := int64(0)
-	var selectPolicyFunc func(int64, int64)int64
+func calculateScaleUpLimitWithScalingRules(currentReplicas int32, scaleEvents *[]TimestampedScaleEvent, scaleUpBehavor *autoscalingv2beta2.HPAScalingRules)(scaleUpLimit int32){
+	proposedReplicas := int32(0)
+	var selectPolicyFunc func(int32, int32)int32
 
 	if *scaleUpBehavor.SelectPolicy == autoscalingv2beta2.DisabledPolicySelect{
 		scaleUpLimit = currentReplicas
 		return
 	}else if *scaleUpBehavor.SelectPolicy == autoscalingv2beta2.MinPolicySelect {
-		scaleUpLimit = math.MinInt64
+		scaleUpLimit = math.MinInt32
 		selectPolicyFunc = min
 	}else {
-		scaleUpLimit = math.MaxInt64
+		scaleUpLimit = math.MaxInt32
 	}
 
 	for _, policy :=  range(scaleUpBehavor.Policies) {
 		replicasAddedInCurrentStabiliztionWindow := getReplicasChangePerScalePolicyPeriod(policy.PeriodSeconds, scaleEvents)
 		startReplicasInCurrentStabiliztionWindow := currentReplicas - replicasAddedInCurrentStabiliztionWindow
 		if policy.Type == autoscalingv2beta2.PodsScalingPolicy {
-			proposedReplicas = startReplicasInCurrentStabiliztionWindow + int64(policy.Value)
+			proposedReplicas = startReplicasInCurrentStabiliztionWindow + int32(policy.Value)
 		}else if policy.Type == autoscalingv2beta2.PercentScalingPolicy {
-			proposedReplicas = int64(math.Ceil(float64(startReplicasInCurrentStabiliztionWindow) * (1 + float64(policy.Value)/100)))
+			proposedReplicas = int32(math.Ceil(float64(startReplicasInCurrentStabiliztionWindow) * (1 + float64(policy.Value)/100)))
 		}
 		scaleUpLimit = selectPolicyFunc(scaleUpLimit, proposedReplicas)
 	}
@@ -169,27 +175,27 @@ func calculateScaleUpLimitWithScalingRules(currentReplicas int64, scaleEvents *[
 	return scaleUpLimit
 }
 
-func calculateScaleDownLimitWithScalingRules(currentReplicas int64, scaleEvents *[]TimestampedScaleEvent, scaleDownBehavor *autoscalingv2beta2.HPAScalingRules)(scaleDownLimit int64){
-	proposedReplicas := int64(0)
-	var selectPolicyFunc func(int64, int64)int64
+func calculateScaleDownLimitWithScalingRules(currentReplicas int32, scaleEvents *[]TimestampedScaleEvent, scaleDownBehavor *autoscalingv2beta2.HPAScalingRules)(scaleDownLimit int32){
+	proposedReplicas := int32(0)
+	var selectPolicyFunc func(int32, int32)int32
 
 	if *scaleDownBehavor.SelectPolicy == autoscalingv2beta2.DisabledPolicySelect{
 		scaleDownLimit = currentReplicas
 		return
 	}else if *scaleDownBehavor.SelectPolicy == autoscalingv2beta2.MinPolicySelect {
-		scaleDownLimit = math.MaxInt64	//初始为最大值
+		scaleDownLimit = math.MaxInt32	//初始为最大值
 		selectPolicyFunc = min
 	}else {
-		scaleDownLimit = math.MinInt64	//初始为最小值
+		scaleDownLimit = math.MinInt32	//初始为最小值
 	}
 
 	for _, policy :=  range(scaleDownBehavor.Policies) {
 		replicasAddedInCurrentStabiliztionWindow := getReplicasChangePerScalePolicyPeriod(policy.PeriodSeconds, scaleEvents)
 		startReplicasInCurrentStabiliztionWindow := currentReplicas - replicasAddedInCurrentStabiliztionWindow
 		if policy.Type == autoscalingv2beta2.PodsScalingPolicy {
-			proposedReplicas = startReplicasInCurrentStabiliztionWindow + int64(policy.Value)
+			proposedReplicas = startReplicasInCurrentStabiliztionWindow + int32(policy.Value)
 		}else if policy.Type == autoscalingv2beta2.PercentScalingPolicy {
-			proposedReplicas = int64(math.Ceil(float64(startReplicasInCurrentStabiliztionWindow) * (1 + float64(policy.Value)/100)))
+			proposedReplicas = int32(math.Ceil(float64(startReplicasInCurrentStabiliztionWindow) * (1 + float64(policy.Value)/100)))
 		}
 		//根据SelectPolicy决策选优
 		scaleDownLimit = selectPolicyFunc(scaleDownLimit, proposedReplicas)
@@ -204,7 +210,7 @@ func calculateScaleDownLimitWithScalingRules(currentReplicas int64, scaleEvents 
 }
 
 // 获取每个伸缩周期内的变更量总和
-func getReplicasChangePerScalePolicyPeriod(policyPeriodSeconds int32, scaleEvents *[]TimestampedScaleEvent)(replicas int64){
+func getReplicasChangePerScalePolicyPeriod(policyPeriodSeconds int32, scaleEvents *[]TimestampedScaleEvent)(replicas int32){
 	period := time.Second * time.Duration(policyPeriodSeconds)
 	cutoff := time.Now().Add(-period)
 
@@ -216,14 +222,14 @@ func getReplicasChangePerScalePolicyPeriod(policyPeriodSeconds int32, scaleEvent
 	return replicas
 }
 
-func max(a, b int64) int64 {
+func max(a, b int32) int32 {
 	if a <= b {
 		return a
 	}
 	return b
 }
 
-func min(a, b int64) int64 {
+func min(a, b int32) int32 {
 	if a <= b {
 		return a
 	}

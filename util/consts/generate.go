@@ -20,5 +20,8 @@ const(
 	ZaohuaModeZhudong = "Zhudong"
 	ZaohuaModeBeidong = "Beidong"
 
+	CpuInitializationPeriod = 300
+	InitialReadinessDelay = 30
 	StabilizationWindowSeconds = 300
+	ScaleTolerance = 0.1
 )

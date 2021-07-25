@@ -16,9 +16,12 @@ limitations under the License.
 package cmd
 
 import (
+	"flag"
 	"github.com/hfeng101/Sunwukong/cmd/initial"
 	"github.com/hfeng101/Sunwukong/util/consts"
 	"github.com/spf13/cobra"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"time"
 )
 
 // ZaohuaCmd represents the Zaohua command
@@ -38,10 +41,15 @@ to quickly create a Cobra application.`,
 }
 
 var (
-	XianqiName string
-	XianqiNamespace string
-	HoumaoName string
-	HoumaoNamespace string
+	//XianqiName string
+	//XianqiNamespace string
+	//HoumaoName string
+	//HoumaoNamespace string
+
+	CpuInitializationPeriod time.Duration
+	InitialReadinessDelay time.Duration
+	DownScaleStabilizationWindow time.Duration
+	ScaleTolerance float64
 )
 
 func init() {
@@ -58,18 +66,34 @@ func init() {
 	// ZaohuaCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
 
-func initZaohuaOptions() error{
+func initZaohuaOptions() {
 	//flag.StringVar(&XianqiName, "xianqi", "", "xianqi name")
 	//flag.StringVar(&XianqiNamespace, "xianqiNamespace", "", "xianqi namespace")
 	//flag.StringVar(&HoumaoName, "houmao", "", "houmao name")
 	//flag.StringVar(&HoumaoNamespace, "houmaoNamespace", "", "houmao namespace")
 
-	return nil
+	flag.DurationVar(&CpuInitializationPeriod, "cpu-initialization-period", consts.CpuInitializationPeriod,"The period after pod start when CPU samples might be skipped.")
+	flag.DurationVar(&InitialReadinessDelay, "initial-readiness-delay", consts.InitialReadinessDelay,"The period after pod start during which readiness changes will be treated as initial readiness.")
+	flag.DurationVar(&DownScaleStabilizationWindow, "down-scale-stabilization-window", 300, "The period for which autoscaler will look backwards and not scale down below any recommendation it made during that period." )
+	flag.Float64Var(&ScaleTolerance, "scale-tolerance", consts.ScaleTolerance, "The minimum change (from 1.0) in desired-to-actual metrics ratio for the horizontal pod autoscaler to consider scaling.")
+
+	opts := zap.Options{
+		Development: true,
+	}
+	opts.BindFlags(flag.CommandLine)
+	flag.Parse()
 }
 
 func zaohuaRunner(cmd *cobra.Command, args []string) {
 	initZaohuaOptions()
+	initParam := &initial.InitialParam{
+		consts.ZaohuaCmdRole,
+		CpuInitializationPeriod,
+		InitialReadinessDelay,
+		DownScaleStabilizationWindow,
+		ScaleTolerance,
+	}
 
 	// 检测crd配置变更事件
-	initial.InitialAggrator(consts.ZaohuaCmdRole)
+	initial.InitialAggrator(initParam)
 }

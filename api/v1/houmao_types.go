@@ -38,8 +38,8 @@ type HoumaoSpec struct {
 	ScaleTargetRef autoscaling.CrossVersionObjectReference	`json:"scaleTargetRef,omitempty"`
 	Metrics []autoscaling.MetricSpec							`json:"metrics,omitempty"`
 	Behavor autoscaling.HorizontalPodAutoscalerBehavior		`json:"behavor"`
-	MinReplicas *int64									`json:"minReplicas"`
-	MaxReplicas int64									`json:"maxReplicas"`
+	MinReplicas *int32									`json:"minReplicas"`
+	MaxReplicas int32									`json:"maxReplicas"`
 
 	//要关注的service，关注对应的endpoints变化或服务质量等
 	ServiceName []string	`json:"serviceName"`
@@ -57,18 +57,21 @@ type XianqiInfo struct {
 
 //记录当时弹性伸缩决策过程及结果
 type MetricStatus struct {
-	autoscaling.MetricStatus
+	//Metrics	autoscaling.MetricStatus	`json:"metricStatus"`
 	IsScaled bool `json:"isScaled"`
-	ScaledReplicas int64 `json:"scaledReplicas"`
-	ScaledValueStatus autoscaling.MetricValueStatus	`json:"scaledValueStatus"`
+	ScaledReplicas int32 `json:"scaledReplicas"`
+	MetricIndex int32	`json:"metricIndex"`
+	MetricType	string	`json:"metricTeyp"`
+	MetricName	string	`json:"metricName"`
+	//ScaledValueStatus autoscaling.MetricValueStatus	`json:"scaledValueStatus"`
 }
 
 type ZaohuaResult struct {
 	Timestamp	time.Time	`json:"timestamp"`
-	CurrentReplicas	int64		`json:"currentReplicas"`
-	DesiredReplicas int64		`json:"desiredReplicas"`
+	CurrentReplicas	int32		`json:"currentReplicas"`
+	DesiredReplicas int32		`json:"desiredReplicas"`
 
-	MetricsElection []MetricStatus	`json:"metricElection"`
+	MetricsElection MetricStatus	`json:"metricElection"`
 	//autoscaling.MetricSpec
 }
 
@@ -77,16 +80,16 @@ type HoumaoStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	//当前所处阶段
+	//当前所处阶段，由猴毛controller更新
 	Phase	string	`json:phase`
 
-	//原始实例数
+	//原始实例数，由猴毛controller更新
 	OriginReplicas	int	`json:originReplicas`
 
-	//各造化名称，与猴毛名称一样
+	//各造化名称，与猴毛名称一样，由猴毛controller更新
 	XianqiInfo	XianqiInfo	`json:xianQiInfo`
 
-	//当前造化结果
+	//当前造化结果，由造化结果更新
 	CurrentZaohuaResult	ZaohuaResult	`json:"currentZaohuaResult"`
 
 	//记录过去5次造化结果，不包含当前的造化结果

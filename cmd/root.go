@@ -106,6 +106,10 @@ func initRootOptions() error{
 func rootRunner(cmd *cobra.Command, args []string){
   initRootOptions()
 
-  initial.InitialAggrator(consts.RootCmdRole)
+  initParam := &initial.InitialParam{
+    Role: consts.RootCmdRole,
+  }
+
+  initial.InitialAggrator(initParam)
 }
 

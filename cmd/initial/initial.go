@@ -49,6 +49,14 @@ import (
 	zaohuacontrollers "github.com/hfeng101/Sunwukong/pkg/zaohua/controllers"
 )
 
+type InitialParam struct {
+	Role	string
+	CpuInitializationPeriod time.Duration
+	InitialReadinessDelay time.Duration
+	DownScaleStabilizationWindow time.Duration
+	ScaleTolerance float64
+}
+
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
@@ -61,15 +69,7 @@ func init() {
 	//+kubebuilder:scaffold:scheme
 }
 
-func initZaohuaParam()(){
-	var cpuInitializationPeriod time.Duration
-	var initialReadinessDelay time.Duration
-
-	flag.DurationVar(&cpuInitializationPeriod, "cpu-initialization-period", ,"The period after pod start when CPU samples might be skipped.")
-	flag.DurationVar(&initialReadinessDelay, "initial-readiness-delay", ,"the period after pod start during which readiness changes will be treated as initial readiness.")
-}
-
-func InitialAggrator(role string) {
+func InitialAggrator(initParam *InitialParam) {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
@@ -111,7 +111,7 @@ func InitialAggrator(role string) {
 	//全局控制
 	ctx := ctrl.SetupSignalHandler()
 
-	if role == consts.RootCmdRole {
+	if initParam.Role == consts.RootCmdRole {
 		if err = (&controllers.HoumaoReconciler{
 			Client: mgr.GetClient(),
 			Log:    ctrl.Log.WithName("controllers").WithName("Sunwukong"),
@@ -120,7 +120,7 @@ func InitialAggrator(role string) {
 			setupLog.Error(err, "unable to create controller", "controller", "Sunwukong")
 			os.Exit(1)
 		}
-	}else if role == consts.ZaohuaCmdRole {
+	}else if initParam.Role == consts.ZaohuaCmdRole {
 		key := types.NamespacedName{
 			os.Getenv("HoumaoNamespace"),
 			os.Getenv("HoumaoName"),
@@ -152,13 +152,14 @@ func InitialAggrator(role string) {
 			return
 		}
 		restMetricsClientHandle := daofametrics.NewRestMetricsClient(rmc, cmc, emc)
-		calculateHandle := daofa.NewCalculateHandle(restMetricsClientHandle)
+		calculateHandle := daofa.NewCalculateHandle(restMetricsClientHandle, mgr.GetClient(), initParam.CpuInitializationPeriod, initParam.InitialReadinessDelay, initParam.DownScaleStabilizationWindow, initParam.ScaleTolerance)
 
 		zaohuaHandle := daofa.ZaohuaHandle{
 			Client: mgr.GetClient(),
 			Object: object,
 			Ch: calculateHandle,
 		}
+
 		//主流程
 		zaohuaMode := os.Getenv("ZaohuaMode")
 		go zaohuaHandle.StartShifa(ctx, zaohuaMode)
@@ -172,7 +173,7 @@ func InitialAggrator(role string) {
 			os.Exit(1)
 		}
 	}else {
-		seelog.Errorf("Initial rool:%v is not valid", role)
+		seelog.Errorf("Initial rool:%v is not valid", initParam.Role)
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder

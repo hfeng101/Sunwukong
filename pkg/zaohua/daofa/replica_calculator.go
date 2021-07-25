@@ -8,7 +8,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+	//"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"math"
 
@@ -21,19 +21,26 @@ import (
 
 type CalculateHandle struct{
 	client.Client
-
 	RestMetricsClientHandle *metricsclient.RestMetricsClient
+	CpuInitializationPeriod time.Duration
+	InitialReadinessDelay time.Duration
+	DownScaleStabilizationWindow time.Duration
+	ScaleTolerance float64
 }
 
-func NewCalculateHandle(restMetricsClientHandle *metricsclient.RestMetricsClient, clientHandle client.Client) *CalculateHandle {
+func NewCalculateHandle(restMetricsClientHandle *metricsclient.RestMetricsClient, clientHandle client.Client, cpuInitializationPeriod time.Duration, initialReadinessDelay time.Duration, downScaleStabilizationWindow time.Duration, scaleTolerance float64) *CalculateHandle {
 	return &CalculateHandle{
 		clientHandle,
 		restMetricsClientHandle,
+		cpuInitializationPeriod,
+		initialReadinessDelay,
+		downScaleStabilizationWindow,
+		scaleTolerance,
 	}
 }
 
 //根据给定的PodsMetric计算出弹性伸缩的结果，根据podSelector找到对应的pod实例
-func (c *CalculateHandle) CalculateReplicasWithPodsMetricSourceType(ctx context.Context, namespace string, podSelector labels.Selector, metric autoscalingv2beta2.MetricSpec, currentReplicas int64)(replicas int64, timestamp time.Time, err error){
+func (c *CalculateHandle) CalculateReplicasWithPodsMetricSourceType(ctx context.Context, namespace string, podSelector labels.Selector, metric autoscalingv2beta2.MetricSpec, currentReplicas int32)(replicas int32, timestamp time.Time, err error){
 	//if metric.
 	//metricSelector,err := labels.Parse(metric.Pods.Metric.Selector.String())
 	metricSelector,err := metav1.LabelSelectorAsSelector(metric.Pods.Metric.Selector)
@@ -44,7 +51,8 @@ func (c *CalculateHandle) CalculateReplicasWithPodsMetricSourceType(ctx context.
 		return 0, time.Time{}, nil
 	}
 
-	replicaCount, utilization, err := c.calculatePlainMetricReplicas(podMetricsInfo, currentReplicas, metric.Pods.Target.AverageValue.MilliValue(), namespace, podSelector, v1.ResourceName(""))
+	//replicaCount, utilization, err := c.calculatePlainMetricReplicas(podMetricsInfo, currentReplicas, metric.Pods.Target.AverageValue.MilliValue(), namespace, podSelector, "", v1.ResourceName(""))
+	replicaCount, _, err := c.calculatePlainMetricReplicas(podMetricsInfo, currentReplicas, metric.Pods.Target.AverageValue.MilliValue(), namespace, podSelector, "", v1.ResourceName(""))
 
 	//if replicaCount
 	replicas = replicaCount
@@ -52,7 +60,7 @@ func (c *CalculateHandle) CalculateReplicasWithPodsMetricSourceType(ctx context.
 	return replicas, time.Time{}, nil
 }
 
-func (c * CalculateHandle)calculatePlainMetricReplicas(metrics metricsclient.PodMetricsInfo, currentReplicas int64, targetUtilization int64, namespace string, podSelector labels.Selector, container string, resource v1.ResourceName)(replicaCount int64, utilization int64, err error){
+func (c * CalculateHandle)calculatePlainMetricReplicas(metrics metricsclient.PodMetricsInfo, currentReplicas int32, targetUtilization int64, namespace string, podSelector labels.Selector, container string, resource v1.ResourceName)(replicaCount int32, utilization int64, err error){
 	ctx := context.Background()
 	objectList := &v1.PodList{}
 	//objectList := &appsv1beta2.Deployment{}
@@ -71,16 +79,16 @@ func (c * CalculateHandle)calculatePlainMetricReplicas(metrics metricsclient.Pod
 		return 0,0, seelog.Errorf("no pods returned by selector:%v", podSelector.String())
 	}
 
-	readyPodCount, unreadyPods, missingPods, ignoredPods := groupPods(objectList, metrics, v1.ResourceName(""), )
+	readyPodCount, unreadyPods, missingPods, ignoredPods := groupPods(objectList, metrics, v1.ResourceName(""), c.CpuInitializationPeriod, c.InitialReadinessDelay)
 
-	////清除未ready的metric指标数据
-	//for _,podName := range(unreadyPods.UnsortedList()){
-	//	delete(metrics, podName)
-	//}
-	////清除未ready的metric指标数据
-	//for _,podName := range(ignoredPods.UnsortedList()){
-	//	delete(metrics, podName)
-	//}
+	//清除未ready的metric指标数据
+	for _,podName := range(unreadyPods.UnsortedList()){
+		delete(metrics, podName)
+	}
+	//清除未ready的metric指标数据
+	for _,podName := range(ignoredPods.UnsortedList()){
+		delete(metrics, podName)
+	}
 
 	//requests, err := calculatePodRequests(objectList, container, resource)
 	//if err != nil {
@@ -103,7 +111,7 @@ func (c * CalculateHandle)calculatePlainMetricReplicas(metrics metricsclient.Pod
 	//如果做再平衡，且pod指标都全
 	if !rebalanceIgnored && len(missingPods) == 0 {
 		//计算弹性系数在容忍度内，则不调整了，直接返回
-		if math.Abs(1.0-usageRatio) <= c.tolerance{
+		if math.Abs(1.0-usageRatio) <= c.ScaleTolerance{
 			return int32(math.Ceil(usageRatio * float64(readyPodCount))), utilization, nil
 		}
 	}
@@ -134,12 +142,12 @@ func (c * CalculateHandle)calculatePlainMetricReplicas(metrics metricsclient.Pod
 	newUsageRatio, _ := metricsclient.GetMetricUtilizationRatio(metrics, targetUtilization)
 
 	//如果再容忍度内，或前后两次计算结果不一致，则直接返回
-	if math.Abs(1.0-newUsageRatio) <= c.tolerace || (usageRatio < 1.0 && newUsageRatio > 1.0) || (usageRatio > 1.0 && newUsageRatio < 1.0) {
+	if math.Abs(1.0-newUsageRatio) <= c.ScaleTolerance || (usageRatio < 1.0 && newUsageRatio > 1.0) || (usageRatio > 1.0 && newUsageRatio < 1.0) {
 		return currentReplicas, utilization, nil
 	}
 
 	//计算返回结果
-	newReplicas := int64(math.Ceil(newUsageRatio * float64(len(metrics))))
+	newReplicas := int32(math.Ceil(newUsageRatio * float64(len(metrics))))
 	if (newUsageRatio < 1.0 && newReplicas > currentReplicas) || (newUsageRatio > 1.0 && newReplicas < currentReplicas) {
 		return currentReplicas, utilization, nil
 	}
@@ -153,8 +161,8 @@ func (c * CalculateHandle)calculatePlainMetricReplicas(metrics metricsclient.Pod
 //3. 根据指标，计算使用率，及与目标值的比率，判断是否触发scale动作
 //4. 根据实况判断是否要做平衡调整，以及实时做出调整
 //5. 重新计算最终结果，及调整后的实例数
-func (c *CalculateHandle)CalculateReplicasWithResourceMetricSourceType(ctx context.Context, namespace string, podSelector labels.Selector, metric autoscalingv2beta2.MetricSpec, currentReplicas int64)(replicas int64, timestamp time.Time, err error){
-	desiredReplicas := int64(0)
+func (c *CalculateHandle)CalculateReplicasWithResourceMetricSourceType(ctx context.Context, namespace string, podSelector labels.Selector, metric autoscalingv2beta2.MetricSpec, currentReplicas int32)(replicas int32, timestamp time.Time, err error){
+	//desiredReplicas := int32(0)
 	//获取实例及其指标数据
 	resource := metric.Resource.Name
 	//container := metric.Resource
@@ -184,7 +192,7 @@ func (c *CalculateHandle)CalculateReplicasWithResourceMetricSourceType(ctx conte
 		return 0,time.Time{}, seelog.Errorf("no pods returned by selector:%v", podSelector.String())
 	}
 
-	readyPodCount, unreadyPods, missingPods, ignoredPods := groupPods(objectList, podMetrics, resource, )
+	readyPodCount, unreadyPods, missingPods, ignoredPods := groupPods(objectList, podMetrics, resource, c.CpuInitializationPeriod, c.InitialReadinessDelay)
 	//清除undreadyPod的metric指标数据
 	for _,podName := range(unreadyPods.UnsortedList()){
 		delete(podMetrics, podName)
@@ -201,7 +209,8 @@ func (c *CalculateHandle)CalculateReplicasWithResourceMetricSourceType(ctx conte
 	}
 
 	targetUtilization := metric.Resource.Target.AverageValue.MilliValue()
-	usageRatio, utilization, rawUtilization, err := metricsclient.GetResourceUtilizationRatio(podMetrics, requests, targetUtilization)
+	//usageRatio, utilization, rawUtilization, err := metricsclient.GetResourceUtilizationRatio(podMetrics, requests, targetUtilization)
+	usageRatio, _, _, err := metricsclient.GetResourceUtilizationRatio(podMetrics, requests, targetUtilization)
 	if err != nil {
 		seelog.Errorf("GetResourceUtilizationRatio failed, err is %v", err.Error())
 		return 0, time.Time{}, err
@@ -211,10 +220,10 @@ func (c *CalculateHandle)CalculateReplicasWithResourceMetricSourceType(ctx conte
 
 	if !rebalanceIgnored && len(missingPods) == 0 {
 		//计算弹性系数在容忍度内，则不调整了，直接返回
-		if math.Abs(1.0-usageRatio) <= c.tolerance{
+		if math.Abs(1.0-usageRatio) <= c.ScaleTolerance{
 			return currentReplicas,  timestamp, nil
 		}
-		return int64(math.Ceil(usageRatio * float64(readyPodCount))), timestamp, nil
+		return int32(math.Ceil(usageRatio * float64(readyPodCount))), timestamp, nil
 	}
 
 	if len(missingPods) > 0 {
@@ -241,13 +250,13 @@ func (c *CalculateHandle)CalculateReplicasWithResourceMetricSourceType(ctx conte
 	newUsageRatio, _ := metricsclient.GetMetricUtilizationRatio(podMetrics, targetUtilization)
 
 	//如果再容忍度内，或前后两次计算结果不一致，则直接返回
-	if math.Abs(1.0-newUsageRatio) <= c.tolerace || (usageRatio < 1.0 && newUsageRatio > 1.0) || (usageRatio > 1.0 && newUsageRatio < 1.0) {
-		//return currentReplicas, int64(utilization), nil
+	if math.Abs(1.0-newUsageRatio) <= c.ScaleTolerance || (usageRatio < 1.0 && newUsageRatio > 1.0) || (usageRatio > 1.0 && newUsageRatio < 1.0) {
+		//return currentReplicas, int32(utilization), nil
 		return currentReplicas, timestamp, nil
 	}
 
 	//计算返回结果
-	newReplicas := int64(math.Ceil(newUsageRatio * float64(len(podMetrics))))
+	newReplicas := int32(math.Ceil(newUsageRatio * float64(len(podMetrics))))
 	if (newUsageRatio < 1.0 && newReplicas > currentReplicas) || (newUsageRatio > 1.0 && newReplicas < currentReplicas) {
 		//return currentReplicas, utilization, nil
 		return currentReplicas, timestamp, nil
@@ -257,7 +266,7 @@ func (c *CalculateHandle)CalculateReplicasWithResourceMetricSourceType(ctx conte
 	return newReplicas, timestamp, nil
 }
 
-func (c *CalculateHandle)CalculateReplicasWithContainerResourceMetricSourceType(ctx context.Context, namespace string, metric autoscalingv2beta2.MetricSpec, podSelector labels.Selector, currentReplicas int64)(replicas int64, timestamp time.Time, err error){
+func (c *CalculateHandle)CalculateReplicasWithContainerResourceMetricSourceType(ctx context.Context, namespace string, metric autoscalingv2beta2.MetricSpec, podSelector labels.Selector, currentReplicas int32)(replicas int32, timestamp time.Time, err error){
 	//获取指标数据
 	resourceName := metric.ContainerResource.Name
 	container := metric.ContainerResource.Container
@@ -287,7 +296,7 @@ func (c *CalculateHandle)CalculateReplicasWithContainerResourceMetricSourceType(
 	}
 
 	//将pod梳理分类
-	readyPodCount, unreadyPods, missingPods, ignoredPods := groupPods(objectList, podMetrics, "", ,)
+	readyPodCount, unreadyPods, missingPods, ignoredPods := groupPods(objectList, podMetrics, "", c.CpuInitializationPeriod, c.InitialReadinessDelay)
 
 	//清除undreadyPod的metric指标数据
 	for _,podName := range(unreadyPods.UnsortedList()){
@@ -307,7 +316,8 @@ func (c *CalculateHandle)CalculateReplicasWithContainerResourceMetricSourceType(
 
 	//计算利用率及与其目标值的比率
 	targetAverageUtilization := metric.ContainerResource.Target.AverageValue.MilliValue()
-	usageRatio, utilization, rawAverageValue, err := metricsclient.GetResourceUtilizationRatio(podMetrics, podRequests, targetAverageUtilization, )
+	//usageRatio, utilization, rawAverageValue, err := metricsclient.GetResourceUtilizationRatio(podMetrics, podRequests, targetAverageUtilization, )
+	usageRatio, _, _, err := metricsclient.GetResourceUtilizationRatio(podMetrics, podRequests, targetAverageUtilization, )
 	if err != nil {
 		seelog.Errorf("GetResourceUtilizationRatio failed, err is %v", err.Error())
 		return 0, time.Time{}, err
@@ -319,10 +329,10 @@ func (c *CalculateHandle)CalculateReplicasWithContainerResourceMetricSourceType(
 	//如果不需要重新平衡调整，且无pod丢失指标，则判断返回
 	if !rebalanceIgnored && len(missingPods) == 0 {
 		//计算弹性系数在容忍度内，则不调整了，直接返回
-		if math.Abs(1.0-usageRatio) <= c.tolerance{
+		if math.Abs(1.0-usageRatio) <= c.ScaleTolerance{
 			return currentReplicas, timestamp, nil
 		}
-		return int64(math.Ceil(usageRatio * float64(readyPodCount))), timestamp, nil
+		return int32(math.Ceil(usageRatio * float64(readyPodCount))), timestamp, nil
 	}
 
 	//如果有pod丢失指标
@@ -350,12 +360,12 @@ func (c *CalculateHandle)CalculateReplicasWithContainerResourceMetricSourceType(
 	newUsageRatio, _ := metricsclient.GetMetricUtilizationRatio(podMetrics, targetAverageUtilization)
 
 	//如果再容忍度内，或前后两次计算结果不一致，则直接返回
-	if math.Abs(1.0-newUsageRatio) <= c.tolerace || (usageRatio < 1.0 && newUsageRatio > 1.0) || (usageRatio > 1.0 && newUsageRatio < 1.0) {
+	if math.Abs(1.0-newUsageRatio) <= c.ScaleTolerance || (usageRatio < 1.0 && newUsageRatio > 1.0) || (usageRatio > 1.0 && newUsageRatio < 1.0) {
 		return currentReplicas, time.Time{}, nil
 	}
 
 	//计算最终决策结果
-	newReplicas := int64(math.Ceil(newUsageRatio * float64(len(podMetrics))))
+	newReplicas := int32(math.Ceil(newUsageRatio * float64(len(podMetrics))))
 	if (newUsageRatio < 1.0 && newReplicas > currentReplicas) || (newUsageRatio > 1.0 && newReplicas < currentReplicas) {
 		return currentReplicas, time.Time{}, nil
 	}
@@ -363,7 +373,7 @@ func (c *CalculateHandle)CalculateReplicasWithContainerResourceMetricSourceType(
 	return newReplicas,timestamp, nil
 }
 
-func (c *CalculateHandle)CalculateReplicasWithObjectSourceType(ctx context.Context, namespace string, podSelector labels.Selector, metric autoscalingv2beta2.MetricSpec, currentReplicas int64)(replicas int64, timestamp time.Time, err error){
+func (c *CalculateHandle)CalculateReplicasWithObjectSourceType(ctx context.Context, namespace string, podSelector labels.Selector, metric autoscalingv2beta2.MetricSpec, currentReplicas int32)(replicas int32, timestamp time.Time, err error){
 	if metric.Object.Target.Type == autoscalingv2beta2.ValueMetricType {
 		replicas, timestamp, err = c.getReplicasWithObjectSourceType(ctx, namespace, metric, podSelector, currentReplicas)
 		if err != nil {
@@ -387,7 +397,7 @@ func (c *CalculateHandle)CalculateReplicasWithObjectSourceType(ctx context.Conte
 }
 
 //按object累计总值评估
-func (c *CalculateHandle)getReplicasWithObjectSourceType(ctx context.Context, namespace string, metric autoscalingv2beta2.MetricSpec, podSelector labels.Selector, currentReplicas int64)(replicas int64, timestamp time.Time, err error){
+func (c *CalculateHandle)getReplicasWithObjectSourceType(ctx context.Context, namespace string, metric autoscalingv2beta2.MetricSpec, podSelector labels.Selector, currentReplicas int32)(replicas int32, timestamp time.Time, err error){
 	metricSelector,err := metav1.LabelSelectorAsSelector(metric.Object.Metric.Selector)
 	if err != nil {
 		seelog.Errorf("LabelSelectorAsSelector failed, err is %v", err)
@@ -409,27 +419,27 @@ func (c *CalculateHandle)getReplicasWithObjectSourceType(ctx context.Context, na
 	return replicas,timestamp, nil
 }
 
-func (c *CalculateHandle)getUsageRatioReplicas(ctx context.Context, CurrentReplicas int64, usageRatio float64, namespace string, selector labels.Selector)(replicas int64, timestamp time.Time, err error) {
+func (c *CalculateHandle)getUsageRatioReplicas(ctx context.Context, CurrentReplicas int32, usageRatio float64, namespace string, selector labels.Selector)(replicas int32, timestamp time.Time, err error) {
 	if CurrentReplicas != 0 {
-		if math.Abs(1.0-usageRatio) <= c.tolerance {
+		if math.Abs(1.0-usageRatio) <= c.ScaleTolerance {
 			return CurrentReplicas, timestamp, nil
 		}
 
-		readyPodCount := int64(0)
+		readyPodCount := int32(0)
 		readyPodCount, err = c.getReadyPodsCount(ctx, namespace, selector)
 		if err != nil {
 			seelog.Errorf("getReadyPodsCount failed, err is %v", err.Error())
 			return 0, time.Time{}, err
 		}
-		replicas = int64(math.Ceil(usageRatio * float64(readyPodCount)))
+		replicas = int32(math.Ceil(usageRatio * float64(readyPodCount)))
 	}else {
-		replicas = int64(math.Ceil(usageRatio))
+		replicas = int32(math.Ceil(usageRatio))
 	}
 
 	return replicas, timestamp, nil
 }
 
-func (c *CalculateHandle)getReadyPodsCount(ctx context.Context, namespace string, podSelector labels.Selector)(readyPodCount int64, err error){
+func (c *CalculateHandle)getReadyPodsCount(ctx context.Context, namespace string, podSelector labels.Selector)(readyPodCount int32, err error){
 	objectList := &v1.PodList{}
 	//objectList := &appsv1beta2.Deployment{}
 	listOptions := client.ListOptions{
@@ -456,7 +466,7 @@ func (c *CalculateHandle)getReadyPodsCount(ctx context.Context, namespace string
 }
 
 //按object对应pod列表的平均值评估
-func (c *CalculateHandle)getReplicasForPerPodWithObjectSourceType(ctx context.Context, namespace string, metric autoscalingv2beta2.MetricSpec, currentReplicas int64)(replicas int64, timestamp time.Time, err error){
+func (c *CalculateHandle)getReplicasForPerPodWithObjectSourceType(ctx context.Context, namespace string, metric autoscalingv2beta2.MetricSpec, currentReplicas int32)(replicas int32, timestamp time.Time, err error){
 	metricSelector,err := metav1.LabelSelectorAsSelector(metric.Object.Metric.Selector)
 	if err != nil {
 		seelog.Errorf("LabelSelectorAsSelector failed, err is %v", err)
@@ -474,16 +484,16 @@ func (c *CalculateHandle)getReplicasForPerPodWithObjectSourceType(ctx context.Co
 	replicas = currentReplicas
 	targetAverageUtilization := metric.Object.Target.AverageValue.MilliValue()
 	usageRatio := float64(utilization)/(float64(targetAverageUtilization)*float64(currentReplicas))
-	if  math.Abs(1.0-usageRatio)> c.tolerance {
+	if  math.Abs(1.0-usageRatio)> c.ScaleTolerance {
 		replicas = int32(math.Ceil(float64(utilization)/float64(targetAverageUtilization)))
 	}
 
-	//utilization := int64(math.Ceil(float64(utilization)/float64(currentReplicas)))
+	//utilization := int32(math.Ceil(float64(utilization)/float64(currentReplicas)))
 
 	return replicas,timestamp, nil
 }
 
-func (c *CalculateHandle)CalculateReplicasWithExternalMetricSourceType(ctx context.Context, namespace string, metric autoscalingv2beta2.MetricSpec, podSelector labels.Selector, currentReplicas int64)(replicas int64, timestamp time.Time, err error){
+func (c *CalculateHandle)CalculateReplicasWithExternalMetricSourceType(ctx context.Context, namespace string, metric autoscalingv2beta2.MetricSpec, podSelector labels.Selector, currentReplicas int32)(replicas int32, timestamp time.Time, err error){
 	if metric.Object.Target.Type == autoscalingv2beta2.ValueMetricType {
 		replicas, timestamp, err = c.getReplicasWithExternalMetricSourceType(ctx, namespace, metric, podSelector,currentReplicas)
 		if err != nil {
@@ -506,7 +516,7 @@ func (c *CalculateHandle)CalculateReplicasWithExternalMetricSourceType(ctx conte
 	return replicas, timestamp, nil
 }
 
-func (c *CalculateHandle) getReplicasWithExternalMetricSourceType(ctx context.Context, namespace string, metric autoscalingv2beta2.MetricSpec, podSelector labels.Selector, currentReplicas int64)(replicas int64, timestamp time.Time, err error){
+func (c *CalculateHandle) getReplicasWithExternalMetricSourceType(ctx context.Context, namespace string, metric autoscalingv2beta2.MetricSpec, podSelector labels.Selector, currentReplicas int32)(replicas int32, timestamp time.Time, err error){
 	metricSelector,err := metav1.LabelSelectorAsSelector(metric.External.Metric.Selector)
 	if err != nil {
 		seelog.Errorf("LabelSelectorAsSelector failed, err is %v", err)
@@ -536,7 +546,7 @@ func (c *CalculateHandle) getReplicasWithExternalMetricSourceType(ctx context.Co
 	return replicas, timestamp, nil
 }
 
-func (c *CalculateHandle)getReplicasForPerPodWithExternalMetricSourceType(ctx context.Context, namespace string, metric autoscalingv2beta2.MetricSpec, podSelector labels.Selector, currentReplicas int64)(replicas int64, timestamp time.Time, err error){
+func (c *CalculateHandle)getReplicasForPerPodWithExternalMetricSourceType(ctx context.Context, namespace string, metric autoscalingv2beta2.MetricSpec, podSelector labels.Selector, currentReplicas int32)(replicas int32, timestamp time.Time, err error){
 	metricSelector,err := metav1.LabelSelectorAsSelector(metric.External.Metric.Selector)
 	if err != nil {
 		seelog.Errorf("LabelSelectorAsSelector failed, err is %v", err)
@@ -559,7 +569,7 @@ func (c *CalculateHandle)getReplicasForPerPodWithExternalMetricSourceType(ctx co
 	targetAverageUtilization := metric.External.Target.AverageValue.MilliValue()
 	usageRatio := float64(utilization)/(float64(targetAverageUtilization) * float64(currentReplicas))
 	if math.Abs(1.0 - usageRatio) > 0 {
-		replicas = int64(math.Ceil(float64(utilization)/float64(targetAverageUtilization)))
+		replicas = int32(math.Ceil(float64(utilization)/float64(targetAverageUtilization)))
 	}
 	//计算调度前的使用情况
 	utilization = int64(math.Ceil(float64(utilization)/float64(currentReplicas)))

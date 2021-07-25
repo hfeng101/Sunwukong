@@ -65,47 +65,70 @@ func (r *HoumaoReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		},
 	}
 
-	status_updator.NewStatusUpdateHandle(r.Client, object)
+	// 获取status updator句柄，用于更新猴毛status
+	statusUpdateHandle := status_updator.NewStatusUpdateHandle(r.Client, object)
 
 	// 根据key值获取猴毛crd，然后确认是否备好了仙气，若未备好则创建一个，否则，若有必要则更新下配置
 	if err := r.Client.Get(ctx, objectKey, object); err != nil {
 		seelog.Infof("get object for key:%v failed, err is %v", objectKey, err)
 
-		//猴毛即将烧毁，确认仙气是否还在，若在，则毁掉
+		//猴毛已烧毁，确认仙气是否还在，若在，则毁掉
 		if err := xianqiManagerHandle.DestroyXianqi(ctx, objectKey); err != nil {
 			seelog.Errorf("DestroyXianqi %v failed, err is %v", objectKey, err)
 			return ctrl.Result{}, err
 		}
-
-		// 销毁仙气后，删除finalizers
-		if err := delFinalizers(ctx, r, object); err != nil {
-			seelog.Errorf("delFinalizers failed, err is %v", err)
-			return ctrl.Result{}, err
-		}
-
-		//处理完后，更新猴毛状态
-		object.Status.Phase = consts.HoumaoPhaseDestroy
-		if err := r.Client.Update(ctx, object); err != nil {
-			seelog.Errorf("update status failed, err is %v", err)
-		}
 	}else {
-		//在创建仙气前，先确认添加了finalizers
-		if err := addFinalizers(ctx, r, object); err != nil {
-			seelog.Errorf("addFinalizers failed, err is %v", err)
-			return ctrl.Result{}, err
+		//先确保object没有被删除，是可用状态
+		if object.ObjectMeta.DeletionTimestamp.IsZero() {
+			//在创建仙气前，先确认给猴毛添加了finalizers
+			if err := addFinalizers(ctx, r, object); err != nil {
+				seelog.Errorf("addFinalizers failed, err is %v", err)
+				return ctrl.Result{}, err
+			}
+
+			//TODO:在创建仙气前需先确认scaleTargetRef指定的target是否存在，若不存在，则直接忽略
+
+			// 根据猴毛crd，创建或更新仙气，随时候着准备发起造化
+			if err := xianqiManagerHandle.CreateOrUpdateXianqi(ctx, objectKey, object); err != nil {
+				seelog.Errorf("CreateOrUpdateXianqi for %v failed, err is %v", objectKey, object)
+				return ctrl.Result{}, err
+			}
+
+			//处理完后，更新猴毛状态
+			object.Status.Phase = consts.HoumaoPhaseXianqi
+			object.Status.XianqiInfo = sunwukongv1.XianqiInfo{
+				consts.XianqiPrefix+objectKey.Name,
+				objectKey.Namespace,
+			}
+
+			if err := statusUpdateHandle.UpdateStatus(ctx, object.Status); err != nil {
+				seelog.Errorf("UpdateStatus failed, err is %v", err.Error())
+				return ctrl.Result{}, err
+			}
+		}else {
+			//如果object已被删除，则
+			seelog.Infof("get object for key:%v failed, err is %v", objectKey, err)
+
+			//猴毛即将烧毁，确认仙气是否还在，若在，则毁掉
+			if err := xianqiManagerHandle.DestroyXianqi(ctx, objectKey); err != nil {
+				seelog.Errorf("DestroyXianqi %v failed, err is %v", objectKey, err)
+				return ctrl.Result{}, err
+			}
+
+			// 销毁仙气后，删除finalizers
+			if err := delFinalizers(ctx, r, object); err != nil {
+				seelog.Errorf("delFinalizers failed, err is %v", err)
+				return ctrl.Result{}, err
+			}
+
+			//处理完后，更新猴毛状态
+			if err := statusUpdateHandle.UpdatePhase(ctx, consts.HoumaoPhaseDestroy); err != nil {
+				seelog.Errorf("UpdateStatus failed, err is %v", err.Error())
+				return ctrl.Result{}, err
+			}
 		}
 
-		//TODO:在创建仙气前需先确认scaleTargetRef指定的target是否存在，若不存在，则直接忽略
 
-		// 根据猴毛crd，创建或更新仙气，随时候着准备发起造化
-		if err := xianqiManagerHandle.CreateOrUpdateXianqi(ctx, objectKey, object); err != nil {
-			seelog.Errorf("CreateOrUpdateXianqi for %v failed, err is %v", objectKey, object)
-			return ctrl.Result{}, err
-		}
-
-		//处理完后，更新猴毛状态
-		object.Status.Phase = consts.HoumaoPhaseXianqi
-		r.Client.Update(ctx, object)
 	}
 
 	return ctrl.Result{}, nil

@@ -29,6 +29,7 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
+// 猴毛可以随便变什么，参考：https://zhidao.baidu.com/question/1310541771961498219.html
 // HoumaoSpec defines the desired state of Houmao
 type HoumaoSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
@@ -44,12 +45,12 @@ type HoumaoSpec struct {
 	//要关注的service，关注对应的endpoints变化或服务质量等
 	ServiceName []string	`json:"serviceName"`
 
-	//造化需要的资源配置，即毫毛变猴需要的仙气量，更新会重建xianqi deployment
+	//造化需要的资源配置，即毫毛变猴需要仙气的量，一大口还是一小口，更新会重建xianqi deployment
 	XianqiLiang	corev1.ResourceRequirements		`json:"xianqiLiang"`
 
 }
 
-//仙气信息，为每根毫毛都会备好一缕仙气，随时准备变化
+//仙气信息，为每根毫毛都会有一类仙气支持，随时准备变化成不同
 type XianqiInfo struct {
 	Name	string		`json:"name"`
 	Namespace	string	`json:"namespace"`

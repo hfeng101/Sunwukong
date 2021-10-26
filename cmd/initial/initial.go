@@ -81,7 +81,6 @@ func InitialAggrator(initParam *InitialParam) {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-
 	flag.StringVar(&logLevel, "log-level", "info", "seelog level,support different level such as debug、info、warn、error，info is the auto value if without setting")
 
 	opts := zap.Options{
@@ -92,6 +91,7 @@ func InitialAggrator(initParam *InitialParam) {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
+	// 创建controller 聚合管理者
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		MetricsBindAddress:     metricsAddr,
@@ -111,7 +111,8 @@ func InitialAggrator(initParam *InitialParam) {
 	//全局控制
 	ctx := ctrl.SetupSignalHandler()
 
-	if initParam.Role == consts.RootCmdRole {
+	// 施法模块初始化流程
+	if initParam.Role == consts.ShifaCmdRole {
 		if err = (&controllers.HoumaoReconciler{
 			Client: mgr.GetClient(),
 			Log:    ctrl.Log.WithName("controllers").WithName("Sunwukong"),
@@ -120,7 +121,9 @@ func InitialAggrator(initParam *InitialParam) {
 			setupLog.Error(err, "unable to create controller", "controller", "Sunwukong")
 			os.Exit(1)
 		}
-	}else if initParam.Role == consts.ZaohuaCmdRole {
+
+		//TODO：接收指令？
+	}else if initParam.Role == consts.ZaohuaCmdRole {	// 造化模块初始化流程
 		key := types.NamespacedName{
 			os.Getenv("HoumaoNamespace"),
 			os.Getenv("HoumaoName"),
@@ -138,6 +141,7 @@ func InitialAggrator(initParam *InitialParam) {
 			return
 		}
 
+		// HPA所需句柄
 		discoveryClient,err := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
 		if err != nil {
 			seelog.Errorf("NewDiscoveryClientForConfig  failed, err is %v", err.Error())
@@ -151,19 +155,21 @@ func InitialAggrator(initParam *InitialParam) {
 			seelog.Errorf("create externalclient failed, err is %v", err.Error())
 			return
 		}
+		// metric操作handle
 		restMetricsClientHandle := daofametrics.NewRestMetricsClient(rmc, cmc, emc)
+		// HPA 计算实施的操作句柄
 		calculateHandle := daofa.NewCalculateHandle(restMetricsClientHandle, mgr.GetClient(), initParam.CpuInitializationPeriod, initParam.InitialReadinessDelay, initParam.DownScaleStabilizationWindow, initParam.ScaleTolerance)
-
 		zaohuaHandle := daofa.ZaohuaHandle{
 			Client: mgr.GetClient(),
 			Object: object,
 			Ch: calculateHandle,
 		}
 
-		//主流程
+		//主流程，开始施法过程（必须前置，否则）
 		zaohuaMode := os.Getenv("ZaohuaMode")
-		go zaohuaHandle.StartShifa(ctx, zaohuaMode)
+		go zaohuaHandle.StartZaohua(ctx, zaohuaMode)
 
+		//辅助流程，监测是否要调整施法法术（即仙气变动），或施法目标（即猴毛更换）
 		if err = (&zaohuacontrollers.ZaohuaController{
 			Client: mgr.GetClient(),
 			//Log:    ctrl.Log.WithName("controllers").WithName("Zaohua"),
@@ -172,6 +178,8 @@ func InitialAggrator(initParam *InitialParam) {
 			setupLog.Error(err, "unable to create controller", "controller", "Zaohua")
 			os.Exit(1)
 		}
+
+		//TODO：接收指令？
 	}else {
 		seelog.Errorf("Initial rool:%v is not valid", initParam.Role)
 		os.Exit(1)

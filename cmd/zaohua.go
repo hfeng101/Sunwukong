@@ -52,8 +52,9 @@ var (
 	ScaleTolerance float64
 )
 
+// 施法的后续造化流程
 func init() {
-	rootCmd.AddCommand(ZaohuaCmd)
+	shifaCmd.AddCommand(ZaohuaCmd)
 
 	// Here you will define your flags and configuration settings.
 

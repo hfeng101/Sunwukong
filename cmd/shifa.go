@@ -31,8 +31,8 @@ import (
 var cfgFile string
 
 
-// rootCmd represents the base command when called without any subcommands
-var rootCmd = &cobra.Command{
+// shifaCmd represents the base command when called without any subcommands
+var shifaCmd = &cobra.Command{
   Use:   "Sunwukong",
   Short: "A brief description of your application",
   Long: `A longer description that spans multiple lines and likely contains
@@ -44,13 +44,13 @@ to quickly create a Cobra application.`,
   // Uncomment the following line if your bare application
   // has an action associated with it:
   //	Run: func(cmd *cobra.Command, args []string) { },
-  Run: rootRunner,
+  Run: shifaRunner,
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
+// Execute adds all child commands to the shifa command and sets flags appropriately.
+// This is called by main.main(). It only needs to happen once to the shifaCmd.
 func Execute() {
-  if err := rootCmd.Execute(); err != nil {
+  if err := shifaCmd.Execute(); err != nil {
     fmt.Println(err)
     os.Exit(1)
   }
@@ -63,12 +63,12 @@ func init() {
   // Cobra supports persistent flags, which, if defined here,
   // will be global for your application.
 
-  rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.Sunwukong.yaml)")
+  shifaCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.Sunwukong.yaml)")
 
 
   // Cobra also supports local flags, which will only run
   // when this action is called directly.
-  rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+  shifaCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
 
 
@@ -98,16 +98,16 @@ func initConfig() {
   }
 }
 
-func initRootOptions() error{
+func initshifaOptions() error{
 
   return nil
 }
 
-func rootRunner(cmd *cobra.Command, args []string){
-  initRootOptions()
+func shifaRunner(cmd *cobra.Command, args []string){
+  initshifaOptions()
 
   initParam := &initial.InitialParam{
-    Role: consts.RootCmdRole,
+    Role: consts.ShifaCmdRole,
   }
 
   initial.InitialAggrator(initParam)

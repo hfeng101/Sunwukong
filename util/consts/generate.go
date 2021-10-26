@@ -10,14 +10,16 @@ const(
 
 	HoumaoFilalizer = "houmao.sunwukong"
 
-	RootCmdRole = "root"
+	ShifaCmdRole = "shifa"
 	ZaohuaCmdRole = "zaohua"
 
 	XianqiImage = ""
 
 	XianqiPrefix = "Xianqi_"
 
+	//主动触发，即监听监测指标，主动确认是否要开启造化
 	ZaohuaModeZhudong = "Zhudong"
+	//被动触发，即接受外部指令，发动造化
 	ZaohuaModeBeidong = "Beidong"
 
 	CpuInitializationPeriod = 300

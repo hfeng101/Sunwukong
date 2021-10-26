@@ -62,7 +62,7 @@ type TimestampedScaleEvent struct {
 //	ServiceName []string	`json:"serviceName"`
 //}
 
-func (z *ZaohuaHandle) StartShifa(ctx context.Context, mode string) error{
+func (z *ZaohuaHandle) StartZaohua(ctx context.Context, mode string) error{
 	//defer ctx.Done()
 
 	// 不断查看监控数据，并根据条件触发造化
@@ -106,7 +106,7 @@ func (z *ZaohuaHandle) StartShifa(ctx context.Context, mode string) error{
 	return nil
 }
 
-func RestartShifa(houmao *sunwukongv1.Houmao) error{
+func RestartZaohua(houmao *sunwukongv1.Houmao) error{
 	defer func(){RestartCh <- struct{}{}}()
 
 	reloadZaohuaHandle(houmao)

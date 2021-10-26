@@ -27,7 +27,8 @@ func (x *XianqiManagerHandle) CreateOrUpdateXianqi(ctx context.Context, key type
 	xianqiObj := &appsv1.Deployment{}
 	if err := x.Get(ctx, x.XianqiKey, xianqiObj); err == nil {
 		seelog.Infof("Xianqi:%v has been existed, updating it", x.XianqiKey)
-		//如果存在，则更新
+		//如果存在，目前仅检测仙气量，并更新
+		//TODO：是否可以考虑检测object（即猴毛指定的目标）变化，然后重建仙气
 		xianqiObj.Spec.Template.Spec.Containers[0].Resources = object.Spec.XianqiLiang
 		if err := x.Client.Update(ctx, xianqiObj); err != nil {
 			seelog.Errorf("Xianqi: %v update failed, err is %v", x.XianqiKey, err)

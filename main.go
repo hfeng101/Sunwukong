@@ -16,10 +16,9 @@ limitations under the License.
 package main
 
 import (
-    //"Sunwukong/cmd"
-    "github.com/hfeng101/Sunwukong/cmd"
+	"github.com/hfeng101/Sunwukong/cmd"
 )
 
 func main() {
-  cmd.Execute()
+	cmd.Execute()
 }

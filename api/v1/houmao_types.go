@@ -50,6 +50,15 @@ type HoumaoSpec struct {
 
 }
 
+//施法结果
+type ShifaResult struct {
+	//当前所处阶段，由猴毛controller更新
+	Phase	string	`json:phase`
+
+	//原始实例数，由猴毛controller更新
+	OriginReplicas	int	`json:originReplicas`
+}
+
 //仙气信息，为每根毫毛都会有一类仙气支持，随时准备变化成不同
 type XianqiInfo struct {
 	Name	string		`json:"name"`
@@ -76,25 +85,28 @@ type ZaohuaResult struct {
 	//autoscaling.MetricSpec
 }
 
-// HoumaoStatus defines the observed state of Houmao
-type HoumaoStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
-	//当前所处阶段，由猴毛controller更新
-	Phase	string	`json:phase`
-
-	//原始实例数，由猴毛controller更新
-	OriginReplicas	int	`json:originReplicas`
-
-	//各造化名称，与猴毛名称一样，由猴毛controller更新
-	XianqiInfo	XianqiInfo	`json:xianQiInfo`
-
+type ZaohuaRecord struct {
 	//当前造化结果，由造化结果更新
 	CurrentZaohuaResult	ZaohuaResult	`json:"currentZaohuaResult"`
 
 	//记录过去5次造化结果，不包含当前的造化结果
 	Last5thZaohuaResult	[5]ZaohuaResult		`json:"last5thZaohuaResult"`
+}
+
+// HoumaoStatus defines the observed state of Houmao
+type HoumaoStatus struct {
+	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
+	// Important: Run "make" to regenerate code after modifying this file
+
+	//施法结果，并记录过程状态
+	ShifaResult ShifaResult `json:shifaResult`
+
+	//各造化名称，与猴毛名称一样，由猴毛controller更新
+	XianqiInfo	XianqiInfo	`json:xianQiInfo`
+
+	// 造化记录
+	ZaohuaRecord ZaohuaRecord `json:zaohuaRecord`
+
 }
 
 //+kubebuilder:object:root=true

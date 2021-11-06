@@ -11,24 +11,24 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	//"k8s.io/apimachinery/pkg/util/cache"
 	metricsapi "k8s.io/metrics/pkg/apis/metrics/v1beta1"
-	resourceclient "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
-	customclient "k8s.io/metrics/pkg/client/custom_metrics"
-	externalclient "k8s.io/metrics/pkg/client/external_metrics"
+	resourcemetricsclient "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
+	custommetricsclient "k8s.io/metrics/pkg/client/custom_metrics"
+	externalmetricsclient "k8s.io/metrics/pkg/client/external_metrics"
 
 	customapi "k8s.io/metrics/pkg/apis/custom_metrics/v1beta2"
 	"time"
 )
 
 type resourceMetricsClient struct{
-	client resourceclient.PodMetricsesGetter
+	client resourcemetricsclient.PodMetricsesGetter
 }
 
 type customMetricsClient struct{
-	client customclient.CustomMetricsClient
+	client custommetricsclient.CustomMetricsClient
 }
 
 type externalMetricsClient struct{
-	client externalclient.ExternalMetricsClient
+	client externalmetricsclient.ExternalMetricsClient
 }
 
 type RestMetricsClient struct{
@@ -37,7 +37,7 @@ type RestMetricsClient struct{
 	*externalMetricsClient
 }
 
-func NewRestMetricsClient(resourceClient resourceclient.PodMetricsesGetter, customClient customclient.CustomMetricsClient, externalClient externalclient.ExternalMetricsClient)*RestMetricsClient {
+func NewRestMetricsClient(resourceClient resourcemetricsclient.PodMetricsesGetter, customClient custommetricsclient.CustomMetricsClient, externalClient externalmetricsclient.ExternalMetricsClient)*RestMetricsClient {
 	return &RestMetricsClient{
 		&resourceMetricsClient{resourceClient},
 		&customMetricsClient{customClient},
@@ -46,7 +46,7 @@ func NewRestMetricsClient(resourceClient resourceclient.PodMetricsesGetter, cust
 }
 
 
-
+// 获取pod中container下resource对应的cpu、mem指标，若containerName为空，则获取所有pod的指标
 func (c *resourceMetricsClient) GetResouceMetric(resource v1.ResourceName, namespace string, selector labels.Selector, containerName string)(PodMetricsInfo, time.Time, error){
 	metrics, err := c.client.PodMetricses(namespace).List(context.TODO(), metav1.ListOptions{LabelSelector: selector.String()})
 	if err != nil {
@@ -102,6 +102,7 @@ func getContainerMetrics(rawMetrics []metricsapi.PodMetrics, resource v1.Resourc
 	return res, nil
 }
 
+// 获取pod下所有指定指标名称的总和，如果有多个pod，则按pod名称分粒度
 func getPodMetrics(rawMetrics []metricsapi.PodMetrics, resource v1.ResourceName)PodMetricsInfo {
 	res := make(PodMetricsInfo, len(rawMetrics))
 
@@ -130,6 +131,7 @@ func getPodMetrics(rawMetrics []metricsapi.PodMetrics, resource v1.ResourceName)
 	return res
 }
 
+//获取k8s内置指标的监控数据
 func (c *customMetricsClient) GetRawMetric(metricName string, namespace string, selector labels.Selector, metricSelector labels.Selector)(PodMetricsInfo, time.Time, error){
 	metrics,err := c.client.NamespacedMetrics(namespace).GetForObjects(schema.GroupKind{Kind: "Pod"}, selector, metricName, metricSelector)
 	if err != nil {
@@ -180,6 +182,7 @@ func (c *customMetricsClient)GetObjectMetric(metricName string, namespace string
 	return metricValue.Value.MilliValue(), metricValue.Timestamp.Time, nil
 }
 
+//获取拓展指标，根据selector过滤
 func (c *externalMetricsClient)GetExternalMetric(metricName string, namespace string, selector labels.Selector)([]int64, time.Time, error){
 	metrics, err := c.client.NamespacedMetrics(namespace).List(metricName, selector)
 	if err != nil {

@@ -25,9 +25,9 @@ import (
 	"github.com/hfeng101/Sunwukong/util/logger"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
-	resourceclient "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
-	customclient "k8s.io/metrics/pkg/client/custom_metrics"
-	externalclient "k8s.io/metrics/pkg/client/external_metrics"
+	resourcemetricsclient "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
+	custommetricsclient "k8s.io/metrics/pkg/client/custom_metrics"
+	externalmetricsclient "k8s.io/metrics/pkg/client/external_metrics"
 	"os"
 	"time"
 
@@ -51,10 +51,10 @@ import (
 
 type InitialParam struct {
 	Role	string
-	CpuInitializationPeriod time.Duration
-	InitialReadinessDelay time.Duration
-	DownScaleStabilizationWindow time.Duration
-	ScaleTolerance float64
+	CpuInitializationPeriod time.Duration		//pod启动时间
+	InitialReadinessDelay time.Duration			//pod ready延时等待时间
+	DownScaleStabilizationWindow time.Duration	//缩容保护周期，默认5min
+	ScaleTolerance float64						//弹性伸缩容忍度，弹性伸缩的最小触发容忍度，默认0.1，即扩容量比原始增加不够0.1则忽略，否则触发扩容
 }
 
 var (
@@ -122,7 +122,7 @@ func InitialAggrator(initParam *InitialParam) {
 			os.Exit(1)
 		}
 
-		//TODO：接收指令？
+		//TODO：接收扩缩容指令的deamon？
 	}else if initParam.Role == consts.ZaohuaCmdRole {	// 造化模块初始化流程
 		key := types.NamespacedName{
 			os.Getenv("HoumaoNamespace"),
@@ -135,22 +135,23 @@ func InitialAggrator(initParam *InitialParam) {
 		}
 
 		//建立RestMetricsClient
-		rmc, err := resourceclient.NewForConfig(mgr.GetConfig())
+		rmc, err := resourcemetricsclient.NewForConfig(mgr.GetConfig())
 		if err != nil {
 			seelog.Errorf("create  resourceclient failed, err is %v", err.Error())
 			return
 		}
 
-		// HPA所需句柄
+		// HPA所需句柄，用户发现非k8s内置资源的操作
 		discoveryClient,err := discovery.NewDiscoveryClientForConfig(mgr.GetConfig())
 		if err != nil {
 			seelog.Errorf("NewDiscoveryClientForConfig  failed, err is %v", err.Error())
 			return
 		}
 
-		apiVersionGetter := customclient.NewAvailableAPIsGetter(discoveryClient)
-		cmc := customclient.NewForConfig(mgr.GetConfig(), mgr.GetClient().RESTMapper(), apiVersionGetter)
-		emc,err := externalclient.NewForConfig(mgr.GetConfig())
+		// 获取新发现资源的可操作接口句柄
+		apiVersionGetter := custommetricsclient.NewAvailableAPIsGetter(discoveryClient)
+		cmc := custommetricsclient.NewForConfig(mgr.GetConfig(), mgr.GetClient().RESTMapper(), apiVersionGetter)
+		emc,err := externalmetricsclient.NewForConfig(mgr.GetConfig())
 		if err != nil {
 			seelog.Errorf("create externalclient failed, err is %v", err.Error())
 			return
@@ -158,15 +159,15 @@ func InitialAggrator(initParam *InitialParam) {
 		// metric操作handle
 		restMetricsClientHandle := daofametrics.NewRestMetricsClient(rmc, cmc, emc)
 		// HPA 计算实施的操作句柄
-		calculateHandle := daofa.NewCalculateHandle(restMetricsClientHandle, mgr.GetClient(), initParam.CpuInitializationPeriod, initParam.InitialReadinessDelay, initParam.DownScaleStabilizationWindow, initParam.ScaleTolerance)
+		calculateHandle := daofa.NewCalculateHandle(mgr.GetClient(), restMetricsClientHandle,  initParam.CpuInitializationPeriod, initParam.InitialReadinessDelay, initParam.DownScaleStabilizationWindow, initParam.ScaleTolerance)
 		zaohuaHandle := daofa.ZaohuaHandle{
 			Client: mgr.GetClient(),
-			Object: object,
+			Object: object,			//造化关联的对象即猴毛，是传入，还是在里面获取？传入不可接收动态变化
 			Ch: calculateHandle,
 		}
 
-		//主流程，开始施法过程（必须前置，否则）
-		zaohuaMode := os.Getenv("ZaohuaMode")
+		//主流程，开始施法造化过程（必须前置，否则后续reconcile失败，触发重启造化流程可能会失败）
+		zaohuaMode := os.Getenv(consts.ZaohuaModeBeidong)
 		go zaohuaHandle.StartZaohua(ctx, zaohuaMode)
 
 		//辅助流程，监测是否要调整施法法术（即仙气变动），或施法目标（即猴毛更换）
@@ -179,13 +180,15 @@ func InitialAggrator(initParam *InitialParam) {
 			os.Exit(1)
 		}
 
-		//TODO：接收指令？
+
+		//TODO：接收扩缩容指令的deamon？
 	}else {
 		seelog.Errorf("Initial rool:%v is not valid", initParam.Role)
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
 
+	// 增加健康检查探测支持
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
 		os.Exit(1)

@@ -28,7 +28,7 @@ type CalculateHandle struct{
 	ScaleTolerance float64
 }
 
-func NewCalculateHandle(restMetricsClientHandle *metricsclient.RestMetricsClient, clientHandle client.Client, cpuInitializationPeriod time.Duration, initialReadinessDelay time.Duration, downScaleStabilizationWindow time.Duration, scaleTolerance float64) *CalculateHandle {
+func NewCalculateHandle(clientHandle client.Client, restMetricsClientHandle *metricsclient.RestMetricsClient,  cpuInitializationPeriod time.Duration, initialReadinessDelay time.Duration, downScaleStabilizationWindow time.Duration, scaleTolerance float64) *CalculateHandle {
 	return &CalculateHandle{
 		clientHandle,
 		restMetricsClientHandle,
@@ -44,13 +44,14 @@ func (c *CalculateHandle) CalculateReplicasWithPodsMetricSourceType(ctx context.
 	//if metric.
 	//metricSelector,err := labels.Parse(metric.Pods.Metric.Selector.String())
 	metricSelector,err := metav1.LabelSelectorAsSelector(metric.Pods.Metric.Selector)
-
+	//获取指标信息
 	podMetricsInfo, timestamp, err := c.RestMetricsClientHandle.GetRawMetric(metric.Pods.Metric.Name, namespace, podSelector, metricSelector)
 	if err != nil {
 		seelog.Errorf("GetRawMetric failed, err is %v", err.Error())
 		return 0, time.Time{}, nil
 	}
 
+	//根据指标信息，进行弹性伸缩计算
 	//replicaCount, utilization, err := c.calculatePlainMetricReplicas(podMetricsInfo, currentReplicas, metric.Pods.Target.AverageValue.MilliValue(), namespace, podSelector, "", v1.ResourceName(""))
 	replicaCount, _, err := c.calculatePlainMetricReplicas(podMetricsInfo, currentReplicas, metric.Pods.Target.AverageValue.MilliValue(), namespace, podSelector, "", v1.ResourceName(""))
 
@@ -268,8 +269,8 @@ func (c *CalculateHandle)CalculateReplicasWithResourceMetricSourceType(ctx conte
 
 func (c *CalculateHandle)CalculateReplicasWithContainerResourceMetricSourceType(ctx context.Context, namespace string, metric autoscalingv2beta2.MetricSpec, podSelector labels.Selector, currentReplicas int32)(replicas int32, timestamp time.Time, err error){
 	//获取指标数据
-	resourceName := metric.ContainerResource.Name
-	container := metric.ContainerResource.Container
+	resourceName := metric.ContainerResource.Name	//resource指标名称，如：cpu、mem、storage、ephemeral-storage
+	container := metric.ContainerResource.Container	//pod中某个container的名称
 	podMetrics, timestamp, err := c.RestMetricsClientHandle.GetResouceMetric(resourceName, namespace, podSelector, container)
 	if err != nil {
 		seelog.Errorf("GetResouceMetric failed, err is %v", err.Error())
@@ -573,7 +574,7 @@ func (c *CalculateHandle)getReplicasForPerPodWithExternalMetricSourceType(ctx co
 	}
 	//计算调度前的使用情况
 	utilization = int64(math.Ceil(float64(utilization)/float64(currentReplicas)))
-	
+
 	return replicas, timestamp, nil
 }
 

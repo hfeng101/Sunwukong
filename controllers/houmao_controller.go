@@ -95,10 +95,21 @@ func (r *HoumaoReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			}
 
 			//处理完后，更新猴毛状态
-			object.Status.Phase = consts.HoumaoPhaseXianqi
+			object.Status.ShifaResult.Phase = consts.HoumaoPhaseXianqi
 			object.Status.XianqiInfo = sunwukongv1.XianqiInfo{
 				consts.XianqiPrefix+objectKey.Name,
 				objectKey.Namespace,
+			}
+
+			status := sunwukongv1.HoumaoStatus{
+				ShifaResult: sunwukongv1.ShifaResult{
+					Phase: consts.HoumaoPhaseXianqi,
+					OriginReplicas: object.
+				},
+				XianqiInfo: sunwukongv1.XianqiInfo{
+					Name: consts.XianqiPrefix+objectKey.Name,
+					Namespace: objectKey.Namespace,
+				},
 			}
 
 			if err := statusUpdateHandle.UpdateStatus(ctx, object.Status); err != nil {
@@ -121,11 +132,17 @@ func (r *HoumaoReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				return ctrl.Result{}, err
 			}
 
-			//处理完后，更新猴毛状态
-			if err := statusUpdateHandle.UpdatePhase(ctx, consts.HoumaoPhaseDestroy); err != nil {
+			//处理完后，更新孙悟空施法结果
+			shifaResult := sunwukongv1.ShifaResult{
+				Phase: consts.HoumaoPhaseDestroy,
+				OriginReplicas: object.Status.ShifaResult.OriginReplicas,
+			}
+			if err := statusUpdateHandle.UpdateShifaResult(ctx, &shifaResult); err != nil {
 				seelog.Errorf("UpdateStatus failed, err is %v", err.Error())
 				return ctrl.Result{}, err
 			}
+
+
 		}
 
 

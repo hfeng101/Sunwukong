@@ -19,12 +19,11 @@ import (
   "fmt"
   "github.com/hfeng101/Sunwukong/cmd/initial"
   "github.com/hfeng101/Sunwukong/util/consts"
-  "os"
   "github.com/spf13/cobra"
+  "os"
 
   homedir "github.com/mitchellh/go-homedir"
   "github.com/spf13/viper"
-
 )
 
 

@@ -43,7 +43,7 @@ func (z *ZaohuaController) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	//配置变更了，记录新的配置，并发起重启
 	//TODO：
 	//  1. ObjectSpec是否可以考虑第一次获取，然后更新
-	//  2. 此处重启是否可以去掉，因为一旦后毛变化，仙气会更新，但好像不会重建？
+	//  2. 此处重启是否可以去掉，因为一旦后毛变化，仙气会更新，造化流程必须重建，否则传入的object仍为老的
 	if !reflect.DeepEqual(object.Spec, ObjectSpec) {
 		ObjectSpec = object.Spec
 		if err := daofa.RestartZaohua(object);err != nil {

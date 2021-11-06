@@ -25,7 +25,7 @@ import (
 var (
 	OriginReplicas = int32(0)
 
-	RestartCh = make(chan struct{})
+	RestartZaohuaCh = make(chan struct{})
 	HoumaoObject = &sunwukongv1.Houmao{}
 	RecommendationRecords []TimestampedRecommendationRecord
 	ScaleUpEvents []TimestampedScaleEvent
@@ -65,9 +65,10 @@ type TimestampedScaleEvent struct {
 func (z *ZaohuaHandle) StartZaohua(ctx context.Context, mode string) error{
 	//defer ctx.Done()
 
-	// 不断查看监控数据，并根据条件触发造化
-	for {
+	// 不断查看监控数据，并根据条件触发造化，一直死循环？
+	for {		//TODO：外循环，还是内循环？是否可以改成wait.util
 		// 支持主动、被动两种模式触发弹性伸缩
+		// TODO：主被动二选一吗？能否同时支持
 		switch mode {
 		case consts.ZaohuaModeZhudong:
 			// 主动拉取指标，检测并触发弹性伸缩
@@ -75,12 +76,12 @@ func (z *ZaohuaHandle) StartZaohua(ctx context.Context, mode string) error{
 				seelog.Errorf("scaler failed, time is %v, err is %v", time.Now().UTC(), err.Error())
 			}
 		case consts.ZaohuaModeBeidong:
-			// 被动接收指标，触发弹性伸缩
+			// 被动接收指令或事件，触发弹性伸缩
 			if err := z.scaleForEvent(ctx, z.Object);err != nil {
 				seelog.Errorf("scaler failed, time is %v, err is %v", time.Now().UTC(), err.Error())
 			}
 		default:
-			// 主动拉取指标，检测并触发弹性伸缩
+			// 默认主动拉取指标，检测并触发弹性伸缩
 			if err := z.detectAndScale(ctx, z.Object);err != nil {
 				seelog.Errorf("scaler failed, time is %v, err is %v", time.Now().UTC(), err.Error())
 			}
@@ -88,16 +89,13 @@ func (z *ZaohuaHandle) StartZaohua(ctx context.Context, mode string) error{
 
 
 		select{
-		case <-ctx.Done():
-			// 退出
+		case <-ctx.Done():		// 正常退出
 			seelog.Infof("break out, return")
 			return nil
-		case <- RestartCh:
-			// 重新加载对象或行为
+		case <- RestartZaohuaCh:	// 重新加载对象或行为
 			seelog.Infof("Reload houmao config for next zaohua operation")
 			z.Object = HoumaoObject.DeepCopy()
-		default:
-			// 下一轮走起
+		default:	// 出现异常，下一轮走起
 			seelog.Infof("next round of zaohua")
 		}
 
@@ -106,8 +104,9 @@ func (z *ZaohuaHandle) StartZaohua(ctx context.Context, mode string) error{
 	return nil
 }
 
+// TODO：是否为独立函数，还需再确认
 func RestartZaohua(houmao *sunwukongv1.Houmao) error{
-	defer func(){RestartCh <- struct{}{}}()
+	defer func(){RestartZaohuaCh <- struct{}{}}()
 
 	reloadZaohuaHandle(houmao)
 	return nil
@@ -124,7 +123,7 @@ func (z *ZaohuaHandle)detectAndScale(ctx context.Context, scaleObject *sunwukong
 	//如果scaleObject没有任何数据，怎么处理，空跑？等待下一轮更新重启
 	if reflect.DeepEqual(*scaleObject, sunwukongv1.Houmao{}){
 		//等待下一次变更触发
-		<- RestartCh
+		<- RestartZaohuaCh
 		return nil
 	}
 
@@ -197,6 +196,7 @@ func (z *ZaohuaHandle)detectAndScale(ctx context.Context, scaleObject *sunwukong
 	}
 	//if scaleObject.Status.Last5thZaohuaResult[4] != sunwukongv1.ZaohuaResult{}
 
+	//变更完，将变更结果更新到object中去
 	if err := z.updateStatus(ctx, zaohuaResult);err != nil {
 
 	}
@@ -204,7 +204,7 @@ func (z *ZaohuaHandle)detectAndScale(ctx context.Context, scaleObject *sunwukong
 	return nil
 }
 
-// 被动接受push上来的事件，然后判断是否做伸缩
+// 被动接受push上来的指令或事件，然后判断是否做伸缩
 func (z *ZaohuaHandle)scaleForEvent(ctx context.Context, object *sunwukongv1.Houmao) error{
 
 	return nil

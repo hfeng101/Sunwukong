@@ -50,15 +50,6 @@ type HoumaoSpec struct {
 
 }
 
-//施法结果
-type ShifaResult struct {
-	//当前所处阶段，由猴毛controller更新
-	Phase	string	`json:phase`
-
-	//原始实例数，由猴毛controller更新
-	OriginReplicas	int	`json:originReplicas`
-}
-
 //仙气信息，为每根毫毛都会有一类仙气支持，随时准备变化成不同
 type XianqiInfo struct {
 	Name	string		`json:"name"`
@@ -86,6 +77,9 @@ type ZaohuaResult struct {
 }
 
 type ZaohuaRecord struct {
+	//原始实例数，由猴毛controller更新
+	OriginReplicas	int32	`json:originReplicas`
+
 	//当前造化结果，由造化结果更新
 	CurrentZaohuaResult	ZaohuaResult	`json:"currentZaohuaResult"`
 
@@ -99,7 +93,7 @@ type HoumaoStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	//施法结果，并记录过程状态
-	ShifaResult ShifaResult `json:shifaResult`
+	ShifaPhase string `json:shifaPhase`
 
 	//各造化名称，与猴毛名称一样，由猴毛controller更新
 	XianqiInfo	XianqiInfo	`json:xianQiInfo`

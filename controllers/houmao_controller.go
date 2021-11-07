@@ -25,6 +25,7 @@ import (
 	"github.com/hfeng101/Sunwukong/util/consts"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"reflect"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -95,27 +96,25 @@ func (r *HoumaoReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			}
 
 			//处理完后，更新猴毛状态
-			object.Status.ShifaResult.Phase = consts.HoumaoPhaseXianqi
-			object.Status.XianqiInfo = sunwukongv1.XianqiInfo{
-				consts.XianqiPrefix+objectKey.Name,
-				objectKey.Namespace,
+			if object.Status.ShifaPhase != consts.HoumaoPhaseXianqi {
+				if err := statusUpdateHandle.UpdateShifaPhase(ctx, consts.HoumaoPhaseXianqi); err != nil {
+					seelog.Errorf("UpdateShifaPhase failed, err is %v", err.Error())
+					return ctrl.Result{}, err
+				}
 			}
 
-			status := sunwukongv1.HoumaoStatus{
-				ShifaResult: sunwukongv1.ShifaResult{
-					Phase: consts.HoumaoPhaseXianqi,
-					OriginReplicas: object.
-				},
-				XianqiInfo: sunwukongv1.XianqiInfo{
-					Name: consts.XianqiPrefix+objectKey.Name,
-					Namespace: objectKey.Namespace,
-				},
+			xianqiInfo := sunwukongv1.XianqiInfo{
+				Name: consts.XianqiPrefix+objectKey.Name,
+				Namespace: objectKey.Namespace,
+			}
+			//如果有变动，则更新
+			if !reflect.DeepEqual(xianqiInfo, object.Status.XianqiInfo) {
+				if err := statusUpdateHandle.UpdateXianqiInfo(ctx, &xianqiInfo); err != nil {
+					seelog.Errorf("UpdateXianqiInfo failed, err is %v", err.Error())
+					return ctrl.Result{}, err
+				}
 			}
 
-			if err := statusUpdateHandle.UpdateStatus(ctx, object.Status); err != nil {
-				seelog.Errorf("UpdateStatus failed, err is %v", err.Error())
-				return ctrl.Result{}, err
-			}
 		}else {
 			//如果object已被删除，则
 			seelog.Infof("get object for key:%v failed, err is %v", objectKey, err)
@@ -126,22 +125,18 @@ func (r *HoumaoReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				return ctrl.Result{}, err
 			}
 
+			//处理完后，更新孙悟空施法结果
+			shifaPhase := consts.HoumaoPhaseDestroy
+			if err := statusUpdateHandle.UpdateShifaPhase(ctx, shifaPhase); err != nil {
+				seelog.Errorf("UpdateStatus failed, err is %v", err.Error())
+				return ctrl.Result{}, err
+			}
+
 			// 销毁仙气后，删除finalizers
 			if err := delFinalizers(ctx, r, object); err != nil {
 				seelog.Errorf("delFinalizers failed, err is %v", err)
 				return ctrl.Result{}, err
 			}
-
-			//处理完后，更新孙悟空施法结果
-			shifaResult := sunwukongv1.ShifaResult{
-				Phase: consts.HoumaoPhaseDestroy,
-				OriginReplicas: object.Status.ShifaResult.OriginReplicas,
-			}
-			if err := statusUpdateHandle.UpdateShifaResult(ctx, &shifaResult); err != nil {
-				seelog.Errorf("UpdateStatus failed, err is %v", err.Error())
-				return ctrl.Result{}, err
-			}
-
 
 		}
 

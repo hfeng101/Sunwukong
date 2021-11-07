@@ -148,6 +148,9 @@ func (z *ZaohuaHandle)detectAndScale(ctx context.Context, scaleObject *sunwukong
 		return err
 	}
 
+	// 记录扩缩容前的初始副本数
+	OriginReplicas = scale.Spec.Replicas
+
 	currentReplicas := scale.Spec.Replicas
 	//selector,err := labels.Parse(scale.Status.Selector)
 	// 获取metrics
@@ -170,17 +173,15 @@ func (z *ZaohuaHandle)detectAndScale(ctx context.Context, scaleObject *sunwukong
 	behavor := scaleObject.Spec.Behavor
 	desiredReplicas, err := z.execScale(ctx, replicas, &scale, &behavor)
 	if err != nil {
-
+		seelog.Errorf("execScale failed, err is %v", err.Error())
 	}
+
 	//同步service变化
 	if err := syncService(ctx, desiredReplicas ); err != nil {
 		seelog.Errorf("syncService failed, err is %v", err.Error())
 	}
 
 	//更新状态，收尾
-	//scaleObject.Status.CurrentZaohuaResult.CurrentReplicas := currentReplicas
-	//scaleObject.Status.CurrentZaohuaResult.DesiredReplicas := desiredReplicas
-
 	zaohuaResult := &sunwukongv1.ZaohuaResult{
 		time.Now(),
 		currentReplicas,
@@ -382,24 +383,29 @@ func syncService(ctx context.Context, replicas int32)error {
 }
 
 func (z *ZaohuaHandle)updateStatus(ctx context.Context, zaohuaResult *sunwukongv1.ZaohuaResult)error {
-	houmaoStatus := z.Object.Status
-	preZaohuaResult := houmaoStatus.CurrentZaohuaResult
-	houmaoStatus.CurrentZaohuaResult = *zaohuaResult
-	lenOfLast5thZaohuaResult := len(houmaoStatus.Last5thZaohuaResult)
+	zaohuaRecord := z.Object.Status.ZaohuaRecord
+	preZaohuaResult := zaohuaRecord.CurrentZaohuaResult
+	zaohuaRecord.CurrentZaohuaResult = *zaohuaResult
+	lenOfLast5thZaohuaResult := len(zaohuaRecord.Last5thZaohuaResult)
 	if lenOfLast5thZaohuaResult < 5 {
 		// 留存过去的5次造化记录
-		houmaoStatus.Last5thZaohuaResult[lenOfLast5thZaohuaResult] = preZaohuaResult
+		zaohuaRecord.Last5thZaohuaResult[lenOfLast5thZaohuaResult] = preZaohuaResult
 	}else {
 		//留新去旧,先往前挪，再补充最后一个
 		for i := 0; i < lenOfLast5thZaohuaResult - 1; i++ {
-			houmaoStatus.Last5thZaohuaResult[i] = houmaoStatus.Last5thZaohuaResult[i+1]
+			zaohuaRecord.Last5thZaohuaResult[i] = zaohuaRecord.Last5thZaohuaResult[i+1]
 		}
-		houmaoStatus.Last5thZaohuaResult[lenOfLast5thZaohuaResult - 1] = preZaohuaResult
+		zaohuaRecord.Last5thZaohuaResult[lenOfLast5thZaohuaResult - 1] = preZaohuaResult
+	}
+
+	// 如果是第一次扩缩容，则把原始副本数记录下来
+	if OriginReplicas != 0 && zaohuaRecord.OriginReplicas == 0 {
+		zaohuaRecord.OriginReplicas = OriginReplicas
 	}
 
 	statusUpdateHandle := status_updator.NewStatusUpdateHandle(z.Client, z.Object)
-	if err := statusUpdateHandle.UpdateStatus(ctx, houmaoStatus); err != nil {
-		seelog.Errorf("UpdateStatus failed, err is %v", err.Error())
+	if err := statusUpdateHandle.UpdateZaohuaRecord(ctx, &zaohuaRecord); err != nil {
+		seelog.Errorf("UpdateZaohuaRecord failed, err is %v", err.Error())
 		return err
 	}
 

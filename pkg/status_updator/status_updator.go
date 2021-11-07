@@ -75,22 +75,22 @@ func (s *StatusUpdateHandle) UpdateStatus(ctx context.Context, status *sunwukong
 }
 
 // 仅更新仙气
-func (s *StatusUpdateHandle) UpdateShifaResult(ctx context.Context, shifaResult *sunwukongv1.ShifaResult) error {
-	if reflect.DeepEqual(s.object.Status.ShifaResult, shifaResult){
+func (s *StatusUpdateHandle) UpdateShifaPhase(ctx context.Context, shifaPhase string) error {
+	if reflect.DeepEqual(s.object.Status.ShifaPhase, shifaPhase){
 		seelog.Infof("status is same,do not update status")
 		return nil
 	}
 
 	//若用patch，就可以不用考虑锁问题，不同的role更新不同的status信息
-	patch,err := json.Marshal(shifaResult)
+	patch,err := json.Marshal(shifaPhase)
 	if err != nil {
-		seelog.Errorf("status:%v doing json marshal failed", shifaResult)
+		seelog.Errorf("status:%v doing json marshal failed", shifaPhase)
 		return err
 	}
 	patchInfo := client.RawPatch(types.StrategicMergePatchType, patch)
 
 	if err := s.Client.Patch(ctx, s.object, patchInfo);err != nil {
-		seelog.Errorf("Patch status:%v for object:%v failed", shifaResult, s.object)
+		seelog.Errorf("Patch status:%v for object:%v failed", shifaPhase, s.object)
 		return err
 	}
 

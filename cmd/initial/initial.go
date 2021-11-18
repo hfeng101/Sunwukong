@@ -180,7 +180,6 @@ func InitialAggrator(initParam *InitialParam) {
 			os.Exit(1)
 		}
 
-
 		//TODO：接收扩缩容指令的deamon？
 	}else {
 		seelog.Errorf("Initial rool:%v is not valid", initParam.Role)

@@ -1,0 +1,1 @@
+# k8s_prometheus_adapter的部署说明

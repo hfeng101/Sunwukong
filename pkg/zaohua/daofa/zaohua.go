@@ -199,7 +199,8 @@ func (z *ZaohuaHandle)detectAndScale(ctx context.Context, scaleObject *sunwukong
 
 	//变更完，将变更结果更新到object中去
 	if err := z.updateStatus(ctx, zaohuaResult);err != nil {
-
+		seelog.Errorf("updateStatus failed, err is %v", err.Error())
+		return err
 	}
 
 	return nil

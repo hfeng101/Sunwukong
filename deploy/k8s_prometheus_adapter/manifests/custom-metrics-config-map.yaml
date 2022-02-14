@@ -115,3 +115,12 @@ data:
         matches: ^.*_queue$
         as: "$0"
       metricsQuery: max(<<.Series>>{<<.LabelMatchers>>})
+    - seriesQuery: '{__name__=test_demo_metrics_total,namespace="default"}'
+      resources:
+        overrides:
+          namespace:
+            resource: namespace
+      name:
+        matches: test_demo_metrics_total
+        as: "$0"
+      matricsQuery: max(<<.Series>>{<<.LabelMatchers>>})

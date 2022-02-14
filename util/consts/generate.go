@@ -26,4 +26,8 @@ const(
 	InitialReadinessDelay = 30
 	StabilizationWindowSeconds = 300
 	ScaleTolerance = 0.1
+
+	LeaderElectionStateOnStartedLeading = "OnStartedLeading"
+	LeaderElectionStateOnNewLeader = "OnNewLeader"
+	LeaderElectionStateOnStoppedLeading = "OnStoppedLeading"
 )

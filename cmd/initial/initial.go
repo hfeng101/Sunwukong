@@ -17,18 +17,14 @@ limitations under the License.
 package initial
 
 import (
-	"context"
 	"flag"
 	"github.com/cihub/seelog"
-	"github.com/google/uuid"
 	"github.com/hfeng101/Sunwukong/pkg/zaohua/daofa"
 	daofametrics "github.com/hfeng101/Sunwukong/pkg/zaohua/daofa/metrics"
 	"github.com/hfeng101/Sunwukong/util/consts"
 	"github.com/hfeng101/Sunwukong/util/logger"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/tools/leaderelection"
-	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	resourcemetricsclient "k8s.io/metrics/pkg/client/clientset/versioned/typed/metrics/v1beta1"
 	custommetricsclient "k8s.io/metrics/pkg/client/custom_metrics"
 	externalmetricsclient "k8s.io/metrics/pkg/client/external_metrics"
@@ -226,34 +222,48 @@ func setLoggerLevel(level string) {
 	logger.SwitchLoggerLevel(level)
 }
 
-// 选举逻辑
-func leaderElection(ctx context.Context, runner func(ctx context.Context, ) ) error{
-	id,err := uuid.NewUUID()
-	if err != nil {
-		seelog.Error("NewUUID failed, error is %v", err.Error())
-		return err
-	}
-
-	lock := &resourcelock.LeaseLock{
-		//LeaseMeta: resourcelock.
-	}
-
-	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
-		Lock: lock,
-		LeaseDuration: 50,
-		RenewDeadline: 30,
-		RetryPeriod: 10,
-		ReleaseOnCancel: true,
-		Callbacks: leaderelection.LeaderCallbacks{
-			// 作为leader时
-			OnStartedLeading: runner,
-			// 竞选leader时
-			OnNewLeader: func(string){},
-			// leader结束后
-			OnStoppedLeading: func(){},
-		},
-
-	})
-
-	return nil
-}
+//// 选举逻辑
+//func leaderElection(ctx context.Context, clientSet kubernetes.Clientset, runner func(ctx context.Context, leaderElectionState string)() ) error{
+//	id,err := uuid.NewUUID()
+//	if err != nil {
+//		seelog.Error("NewUUID failed, error is %v", err.Error())
+//		return err
+//	}
+//
+//	lock := &resourcelock.LeaseLock{
+//		//LeaseMeta: resourcelock.
+//		LeaseMeta: metav1.ObjectMeta{
+//			Name: consts.HoumaoOperatorName,
+//			Namespace: consts.HoumaoOperatorNamespace,
+//		},
+//		Client: clientSet.CoordinationV1(),
+//		LockConfig: resourcelock.ResourceLockConfig{
+//			Identity: id.String(),
+//		},
+//	}
+//
+//	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
+//		Lock: lock,
+//		LeaseDuration: 50,
+//		RenewDeadline: 30,
+//		RetryPeriod: 10,
+//		ReleaseOnCancel: true,
+//		Callbacks: leaderelection.LeaderCallbacks{
+//			// 作为leader时
+//			OnStartedLeading: func(ctx context.Context) {
+//				runner(ctx, consts.LeaderElectionStateOnStartedLeading)
+//			},
+//			// 竞选或重选更换leader时，做一些准备工作？
+//			OnNewLeader: func(identity string) {
+//				runner(ctx, consts.LeaderElectionStateOnNewLeader)
+//			},
+//			// leader结束后，保持list/watch更新？
+//			OnStoppedLeading: func() {
+//				runner(ctx, consts.LeaderElectionStateOnStoppedLeading)
+//			},
+//		},
+//
+//	})
+//
+//	return nil
+//}

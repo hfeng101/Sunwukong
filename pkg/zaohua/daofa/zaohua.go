@@ -176,7 +176,7 @@ func (z *ZaohuaHandle)detectAndScale(ctx context.Context, scaleObject *sunwukong
 		seelog.Errorf("execScale failed, err is %v", err.Error())
 	}
 
-	//同步service变化
+	//TODO:同步service变化，待完善迭代
 	if err := syncService(ctx, desiredReplicas ); err != nil {
 		seelog.Errorf("syncService failed, err is %v", err.Error())
 	}

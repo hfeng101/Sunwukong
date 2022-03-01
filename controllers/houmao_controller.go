@@ -146,10 +146,10 @@ func (r *HoumaoReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	return ctrl.Result{}, nil
 }
 
-// 支持选举
-func (r *HoumaoReconciler) NeedLeaderElection() bool {
-	return true
-}
+//// 支持选举
+//func (r *HoumaoReconciler) NeedLeaderElection() bool {
+//	return true
+//}
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *HoumaoReconciler) SetupWithManager(mgr ctrl.Manager) error {

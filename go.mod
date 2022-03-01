@@ -59,7 +59,6 @@ replace k8s.io/sample-controller => k8s.io/sample-controller v0.22.4
 require (
 	github.com/cihub/seelog v0.0.0-20170130134532-f561c5e57575
 	github.com/go-logr/logr v0.4.0
-	github.com/google/uuid v1.1.2
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/onsi/ginkgo v1.16.4
 	github.com/onsi/gomega v1.15.0
